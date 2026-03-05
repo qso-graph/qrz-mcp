@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.qso-graph/qrz-mcp",
+  "description": "QRZ.com MCP server. Callsign lookup, DXCC resolution, logbook queries via QRZ XML API.",
+  "repository": {
+    "url": "https://github.com/qso-graph/qrz-mcp",
+    "source": "github"
+  },
+  "version": "0.1.2",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "qrz-mcp",
+      "version": "0.1.2",
+      "transport": { "type": "stdio" }
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tool": "mcp-publisher",
+      "version": "2.0.0"
+    }
+  }
+}

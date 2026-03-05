@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.qso-graph/qrz-mcp -->
 # qrz-mcp
 
 MCP server for [QRZ.com](https://www.qrz.com/) — callsign lookups, DXCC entity resolution, and logbook queries through any MCP-compatible AI assistant.
