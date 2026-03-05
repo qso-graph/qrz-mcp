@@ -94,7 +94,11 @@ class XmlClient:
                 self._agent = f"qrz-mcp/{__version__} ({callsign})"
 
     def _get(self, params: dict[str, str]) -> ET.Element:
-        """HTTP GET to QRZ XML API, return parsed root element."""
+        """HTTP GET to QRZ XML API, return parsed root element.
+
+        Catches all urllib exceptions to prevent credential-bearing URLs
+        from leaking through error messages (login puts password in query params).
+        """
         self._rate_limiter.wait()
         qs = urllib.parse.urlencode(params, safe=";")
         url = f"{_XML_URL}?{qs}"
@@ -105,11 +109,11 @@ class XmlClient:
                 body = resp.read().decode("utf-8", errors="replace")
         except ConnectionRefusedError:
             self._rate_limiter.freeze_ban()
-            raise
+            raise RuntimeError("QRZ connection refused — possible IP ban")
         except OSError as e:
             if "Connection refused" in str(e):
                 self._rate_limiter.freeze_ban()
-            raise
+            raise RuntimeError("QRZ request failed — check network and credentials")
         return ET.fromstring(body)
 
     def _login(self) -> str:

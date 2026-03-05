@@ -6,8 +6,49 @@ on:
       - "v*"
 
 jobs:
+  security:
+    name: Security gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install pytest pip-audit
+
+      - name: Run security test suite
+        run: python -m pytest tests/test_security.py -v
+
+      - name: Audit dependencies for vulnerabilities
+        run: pip-audit --strict --desc 2>&1 || true
+
+      - name: Grep check — no subprocess/shell
+        run: |
+          if grep -rn 'subprocess\.\|os\.system\|shell=True' src/; then
+            echo "FAIL: subprocess/shell found in source"
+            exit 1
+          fi
+
+      - name: Grep check — no plaintext http://
+        run: |
+          if grep -rn 'http://' src/ | grep -v 'localhost\|127\.0\.0\.1\|::1'; then
+            echo "FAIL: non-HTTPS URL found in source"
+            exit 1
+          fi
+
+      - name: Grep check — no credential logging
+        run: |
+          if grep -rn -i 'print.*password\|print.*api_key\|logging.*password\|logging.*api_key' src/; then
+            echo "FAIL: credential logging found in source"
+            exit 1
+          fi
+
   publish:
     name: Build and publish to PyPI
+    needs: security
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

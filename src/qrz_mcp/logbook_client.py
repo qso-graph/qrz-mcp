@@ -148,11 +148,9 @@ class LogbookClient:
                 body = resp.read().decode("utf-8", errors="replace")
         except ConnectionRefusedError:
             self._rate_limiter.freeze_ban()
-            raise
-        except OSError as e:
-            if "Connection refused" in str(e):
-                self._rate_limiter.freeze_ban()
-            raise
+            raise RuntimeError("QRZ Logbook connection refused — possible IP ban")
+        except OSError:
+            raise RuntimeError("QRZ Logbook request failed — check network and API key")
 
         kv = _parse_kv(body)
 
