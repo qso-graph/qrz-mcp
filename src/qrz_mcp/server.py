@@ -123,6 +123,37 @@ def qrz_logbook_status(persona: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def qrz_download(
+    persona: str,
+    band: str | None = None,
+    mode: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    """Download your complete QRZ logbook as raw ADIF text.
+
+    Returns the .adi file content — save to disk for import into your logger.
+    Transparently paginates to collect all records. Rate-limited to avoid API bans.
+
+    Args:
+        persona: Persona name configured in adif-mcp.
+        band: Filter by band (e.g., '20m').
+        mode: Filter by mode (e.g., 'FT8').
+        start_date: Date range start (YYYY-MM-DD).
+        end_date: Date range end (YYYY-MM-DD).
+
+    Returns:
+        Raw ADIF text and record count.
+    """
+    try:
+        return _logbook(persona).download_adif(
+            band=band, mode=mode, start_date=start_date, end_date=end_date,
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
 def qrz_logbook_fetch(
     persona: str,
     band: str | None = None,

@@ -186,6 +186,34 @@ class LogbookClient:
             end_date=kv.get("END", ""),
         )
 
+    def _build_options(
+        self,
+        band: str | None = None,
+        mode: str | None = None,
+        callsign: str | None = None,
+        dxcc: int | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        confirmed_only: bool = False,
+    ) -> list[str]:
+        """Build OPTION filter list for FETCH requests."""
+        options: list[str] = []
+        if band:
+            options.append(f"BAND:{band.upper()}")
+        if mode:
+            options.append(f"MODE:{mode.upper()}")
+        if callsign:
+            options.append(f"CALL:{callsign.upper()}")
+        if dxcc is not None:
+            options.append(f"DXCC:{dxcc}")
+        if start_date:
+            options.append(f"AFTER:{start_date.replace('-', '')}")
+        if end_date:
+            options.append(f"BEFORE:{end_date.replace('-', '')}")
+        if confirmed_only:
+            options.append("STATUS:CONFIRMED")
+        return options
+
     def fetch(
         self,
         band: str | None = None,
@@ -204,29 +232,12 @@ class LogbookClient:
 
         all_qsos: list[QsoRecord] = []
         after_logid: str | None = None
+        options = self._build_options(band, mode, callsign, dxcc, start_date, end_date, confirmed_only)
 
         while len(all_qsos) < limit:
             params: dict[str, str] = {"ACTION": "FETCH"}
-
-            # Build OPTION filter string
-            options: list[str] = []
-            if band:
-                options.append(f"BAND:{band.upper()}")
-            if mode:
-                options.append(f"MODE:{mode.upper()}")
-            if callsign:
-                options.append(f"CALL:{callsign.upper()}")
-            if dxcc is not None:
-                options.append(f"DXCC:{dxcc}")
-            if start_date:
-                options.append(f"AFTER:{start_date.replace('-', '')}")
-            if end_date:
-                options.append(f"BEFORE:{end_date.replace('-', '')}")
-            if confirmed_only:
-                options.append("STATUS:CONFIRMED")
             if options:
                 params["OPTION"] = ",".join(options)
-
             if after_logid:
                 params["AFTERLOGID"] = after_logid
 
@@ -257,3 +268,57 @@ class LogbookClient:
                 break
 
         return all_qsos
+
+    def download_adif(
+        self,
+        band: str | None = None,
+        mode: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, Any]:
+        """Download complete logbook as raw ADIF text.
+
+        Paginates through ALL records, concatenates ADIF fragments,
+        and wraps with a proper ADIF header.
+        """
+        if _is_mock():
+            header = "<ADIF_VER:5>3.1.6\n<PROGRAMID:7>qrz-mcp\n<EOH>\n"
+            adif_text = header + _MOCK_FETCH_ADIF
+            record_count = adif_text.upper().count("<EOR>")
+            return {"adif": adif_text, "record_count": record_count}
+
+        fragments: list[str] = []
+        after_logid: str | None = None
+        options = self._build_options(band=band, mode=mode, start_date=start_date, end_date=end_date)
+
+        while True:
+            params: dict[str, str] = {"ACTION": "FETCH"}
+            if options:
+                params["OPTION"] = ",".join(options)
+            if after_logid:
+                params["AFTERLOGID"] = after_logid
+
+            kv = self._post(params)
+
+            adif = kv.get("ADIF", "")
+            if not adif:
+                break
+
+            fragments.append(adif)
+
+            # Pagination cursor
+            logids = kv.get("LOGIDS", "")
+            if logids:
+                last_id = logids.split(",")[-1].strip()
+                if last_id and last_id != after_logid:
+                    after_logid = last_id
+                else:
+                    break
+            else:
+                break
+
+        header = "<ADIF_VER:5>3.1.6\n<PROGRAMID:7>qrz-mcp\n<EOH>\n"
+        body = "\n".join(fragments)
+        adif_text = header + body
+        record_count = adif_text.upper().count("<EOR>")
+        return {"adif": adif_text, "record_count": record_count}

@@ -7,7 +7,6 @@ import threading
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from typing import Any
 
 from . import __version__
 from .cache import TTLCache
