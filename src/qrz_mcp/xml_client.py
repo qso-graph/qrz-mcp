@@ -19,7 +19,10 @@ _NS = "http://xmldata.qrz.com"
 
 def _find(root: ET.Element, tag: str) -> ET.Element | None:
     """Find child element, trying with and without QRZ namespace."""
-    return root.find(f"{{{_NS}}}{tag}") or root.find(tag)
+    elem = root.find(f"{{{_NS}}}{tag}")
+    if elem is not None:
+        return elem
+    return root.find(tag)
 
 
 def _findtext(node: ET.Element, tag: str) -> str:
