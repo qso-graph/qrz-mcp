@@ -14,6 +14,17 @@ from .rate_limiter import RateLimiter
 from .types import CallsignRecord, DxccRecord
 
 _XML_URL = "https://xmldata.qrz.com/xml/current/"
+_NS = "http://xmldata.qrz.com"
+
+
+def _find(root: ET.Element, tag: str) -> ET.Element | None:
+    """Find child element, trying with and without QRZ namespace."""
+    return root.find(f"{{{_NS}}}{tag}") or root.find(tag)
+
+
+def _findtext(node: ET.Element, tag: str) -> str:
+    """Find child text, trying with and without QRZ namespace."""
+    return node.findtext(f"{{{_NS}}}{tag}") or node.findtext(tag) or ""
 
 # Cache TTLs
 _CALLSIGN_TTL = 300.0  # 5 minutes
@@ -99,7 +110,7 @@ class XmlClient:
         from leaking through error messages (login puts password in query params).
         """
         self._rate_limiter.wait()
-        qs = urllib.parse.urlencode(params, safe=";")
+        qs = urllib.parse.urlencode(params)
         url = f"{_XML_URL}?{qs}"
         req = urllib.request.Request(url, method="GET")
         req.add_header("User-Agent", self._agent)
@@ -126,16 +137,16 @@ class XmlClient:
             "agent": self._agent,
         })
 
-        session = root.find("Session")
+        session = _find(root, "Session")
         if session is None:
             raise RuntimeError("QRZ: no Session in login response")
 
-        error = session.findtext("Error")
+        error = _findtext(session, "Error")
         if error:
             self._rate_limiter.freeze_auth()
             raise RuntimeError(f"QRZ login failed: {error}")
 
-        key = session.findtext("Key")
+        key = _findtext(session, "Key")
         if not key:
             raise RuntimeError("QRZ: no Key in login response")
 
@@ -156,15 +167,15 @@ class XmlClient:
         params["s"] = key
         root = self._get(params)
 
-        session = root.find("Session")
+        session = _find(root, "Session")
         if session is not None:
-            new_key = session.findtext("Key")
+            new_key = _findtext(session, "Key")
             if new_key:
                 with self._lock:
                     self._session_key = new_key
                 return root
 
-            error = session.findtext("Error") or ""
+            error = _findtext(session, "Error")
             if retry and ("session" in error.lower() or "timeout" in error.lower()):
                 with self._lock:
                     self._session_key = None
@@ -191,12 +202,12 @@ class XmlClient:
         else:
             root = self._request({"callsign": callsign.upper()})
 
-        node = root.find("Callsign")
+        node = _find(root, "Callsign")
         if node is None:
             return CallsignRecord(call=callsign.upper())
 
         def _text(tag: str) -> str:
-            return (node.findtext(tag) or "").strip()  # type: ignore[union-attr]
+            return _findtext(node, tag).strip()  # type: ignore[arg-type]
 
         def _float(tag: str) -> float | None:
             v = _text(tag)
@@ -242,8 +253,9 @@ class XmlClient:
         self._cache.set(key, rec, _CALLSIGN_TTL)
         return rec
 
-    def dxcc(self, query: str) -> DxccRecord:
+    def dxcc(self, query: str | int) -> DxccRecord:
         """Resolve DXCC entity from callsign or numeric code."""
+        query = str(query)
         key = f"dxcc:{query.upper()}"
         cached = self._cache.get(key)
         if cached is not None:
@@ -254,12 +266,12 @@ class XmlClient:
         else:
             root = self._request({"dxcc": query})
 
-        node = root.find("DXCC")
+        node = _find(root, "DXCC")
         if node is None:
             return DxccRecord(name=f"Not found: {query}")
 
         def _text(tag: str) -> str:
-            return (node.findtext(tag) or "").strip()  # type: ignore[union-attr]
+            return _findtext(node, tag).strip()  # type: ignore[arg-type]
 
         def _float(tag: str) -> float | None:
             v = _text(tag)

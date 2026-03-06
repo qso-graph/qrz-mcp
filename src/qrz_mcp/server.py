@@ -8,7 +8,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from adif_mcp.credentials import get_creds
+from adif_mcp.identity import PersonaManager
 
 from . import __version__
 from .logbook_client import LogbookClient
@@ -18,6 +18,11 @@ from .xml_client import XmlClient
 
 def _is_mock() -> bool:
     return os.getenv("QRZ_MCP_MOCK") == "1"
+
+
+def _pm() -> PersonaManager:
+    return PersonaManager()
+
 
 mcp = FastMCP(
     "qrz-mcp",
@@ -36,14 +41,8 @@ def _xml(persona: str) -> XmlClient:
     if persona not in _xml_clients:
         client = XmlClient(_rate_limiter)
         if not _is_mock():
-            creds = get_creds(persona, "qrz")
-            if creds is None or not creds.username or not creds.password:
-                raise ValueError(
-                    f"No QRZ XML credentials for persona '{persona}'. "
-                    "Set up with: adif-mcp creds set --persona <name> --provider qrz "
-                    "--username <call> --password <pass>"
-                )
-            client.configure(creds.username, creds.password, callsign=creds.username)
+            username, password = _pm().require(persona, "qrz")
+            client.configure(username, password, callsign=username)
         _xml_clients[persona] = client
     return _xml_clients[persona]
 
@@ -53,14 +52,8 @@ def _logbook(persona: str) -> LogbookClient:
     if persona not in _logbook_clients:
         client = LogbookClient(_rate_limiter)
         if not _is_mock():
-            creds = get_creds(persona, "qrz")
-            if creds is None or not creds.api_key:
-                raise ValueError(
-                    f"No QRZ Logbook API key for persona '{persona}'. "
-                    "Set up with: adif-mcp creds set --persona <name> --provider qrz "
-                    "--api-key <key>"
-                )
-            client.configure(creds.api_key, callsign=creds.username)
+            username, api_key = _pm().require(persona, "qrz_logbook")
+            client.configure(api_key, callsign=username)
         _logbook_clients[persona] = client
     return _logbook_clients[persona]
 
