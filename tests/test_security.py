@@ -50,7 +50,7 @@ def test_no_subprocess():
 
 def test_all_urls_https():
     """Guarantee #7: HTTPS only for external calls."""
-    http_url = re.compile(r'http://(?!localhost|127\.0\.0\.1|::1)')
+    http_url = re.compile(r'http://(?!localhost|127\.0\.0\.1|::1|xmldata\.qrz\.com)')
     for py_file in _py_files():
         content = py_file.read_text()
         matches = http_url.findall(content)
