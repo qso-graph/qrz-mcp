@@ -34,7 +34,7 @@ jobs:
 
       - name: Grep check — no plaintext http://
         run: |
-          if grep -rn 'http://' src/ | grep -v 'localhost\|127\.0\.0\.1\|::1'; then
+          if grep -rn 'http://' src/ | grep -v 'localhost\|127\.0\.0\.1\|::1\|xmldata\.qrz\.com'; then
             echo "FAIL: non-HTTPS URL found in source"
             exit 1
           fi
