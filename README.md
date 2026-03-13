@@ -3,7 +3,7 @@
 
 MCP server for [QRZ.com](https://www.qrz.com/) — callsign lookups, DXCC entity resolution, and logbook queries through any MCP-compatible AI assistant.
 
-Part of the [qso-graph](https://qso-graph.io/) project. Depends on [adif-mcp](https://pypi.org/project/adif-mcp/) for persona and credential management.
+Part of the [qso-graph](https://qso-graph.io/) project. Uses [qso-graph-auth](https://pypi.org/project/qso-graph-auth/) for credential management.
 
 ## Install
 
@@ -24,23 +24,23 @@ pip install qrz-mcp
 
 ### 1. Set up credentials
 
-qrz-mcp uses adif-mcp personas for credential management. QRZ has **two separate auth mechanisms** — set up whichever you need:
+qrz-mcp uses qso-graph-auth personas for credential management. QRZ has **two separate auth mechanisms** — set up whichever you need:
 
 ```bash
-# Install adif-mcp if you haven't
-pip install adif-mcp
+# Install qso-graph-auth if you haven't
+pip install qso-graph-auth
 
 # Create a persona
-adif-mcp persona create ki7mt --callsign KI7MT
+qso-auth persona create ki7mt --callsign KI7MT
 
 # Enable QRZ provider
-adif-mcp persona provider ki7mt qrz --username KI7MT
+qso-auth persona provider ki7mt qrz --username KI7MT
 
 # Set password (for XML API: qrz_lookup, qrz_dxcc)
-adif-mcp persona secret ki7mt qrz
+qso-auth persona secret ki7mt qrz
 
 # Set API key (for Logbook API: qrz_logbook_status, qrz_logbook_fetch)
-adif-mcp creds set --persona ki7mt --provider qrz --api-key YOUR_API_KEY
+qso-auth creds set --persona ki7mt --provider qrz --api-key YOUR_API_KEY
 ```
 
 **XML API** (callsign lookup, DXCC) requires a QRZ XML Subscription ($35.95/yr). Free tier returns name and address only.

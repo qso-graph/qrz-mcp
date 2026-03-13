@@ -6,12 +6,12 @@
     "url": "https://github.com/qso-graph/qrz-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.3.2",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "qrz-mcp",
-      "version": "0.2.0",
+      "version": "0.3.2",
       "transport": { "type": "stdio" }
     }
   ],
