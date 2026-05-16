@@ -273,3 +273,48 @@ class TestQrzLogbookFetch:
         result = qrz_logbook_fetch(persona="test")
         for rec in result["records"]:
             assert "gridsquare" in rec
+
+
+# ---------------------------------------------------------------------------
+# QRZ-L2-044..048: get_version_info — fleet identity attestation
+# ---------------------------------------------------------------------------
+
+
+class TestGetVersionInfo:
+    """Tracks IONIS-AI/ionis-devel#49 — fleet get_version_info convention."""
+
+    def test_returns_service_name(self):
+        """QRZ-L2-044: payload includes service_name = 'qrz-mcp'."""
+        from qrz_mcp.server import _version_info_payload
+
+        assert _version_info_payload()["service_name"] == "qrz-mcp"
+
+    def test_returns_service_version(self):
+        """QRZ-L2-045: service_version matches package __version__."""
+        from qrz_mcp import __version__
+        from qrz_mcp.server import _version_info_payload
+
+        assert _version_info_payload()["service_version"] == __version__
+
+    def test_returns_spec_version(self):
+        """QRZ-L2-046: spec_version pins the QRZ API contract."""
+        from qrz_mcp.server import _version_info_payload
+
+        assert _version_info_payload()["spec_version"] == "qrz-com-v1"
+
+    def test_payload_keys_are_required_set(self):
+        """QRZ-L2-047: payload has the required keys (no extras yet)."""
+        from qrz_mcp.server import _version_info_payload
+
+        result = _version_info_payload()
+        required = {"service_name", "service_version", "spec_version"}
+        assert required.issubset(set(result.keys()))
+
+    def test_all_values_are_strings(self):
+        """QRZ-L2-048: all returned values are strings (JSON-safe envelope)."""
+        from qrz_mcp.server import _version_info_payload
+
+        result = _version_info_payload()
+        for k in ("service_name", "service_version", "spec_version"):
+            assert isinstance(result[k], str), f"{k} should be str, got {type(result[k])}"
+            assert result[k], f"{k} should be non-empty"
