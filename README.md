@@ -20,6 +20,7 @@ pip install qrz-mcp
 | `qrz_logbook_status` | Logbook | API key | Logbook stats (QSO count, DXCC total, date range) |
 | `qrz_logbook_fetch` | Logbook | API key | Query QSOs with filters and transparent pagination |
 | `qrz_download` | Logbook | API key | Download full logbook as ADIF |
+| `get_version_info` | — | None | Service version + upstream QRZ API version (fleet identity attestation) |
 
 ## Quick Start
 

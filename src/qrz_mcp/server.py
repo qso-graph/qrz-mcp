@@ -10,7 +10,7 @@ from fastmcp import FastMCP
 
 from qso_graph_auth.identity import PersonaManager
 
-from . import __version__
+from . import __spec_version__, __version__
 from .logbook_client import LogbookClient
 from .rate_limiter import RateLimiter
 from .xml_client import XmlClient
@@ -61,6 +61,32 @@ def _logbook(persona: str) -> LogbookClient:
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
+
+
+def _version_info_payload() -> dict[str, Any]:
+    """Build the version info envelope. Pulled into a helper so tests can
+    call it directly without going through the FastMCP wrapper."""
+    return {
+        "service_name": "qrz-mcp",
+        "service_version": __version__,
+        "spec_version": __spec_version__,
+    }
+
+
+@mcp.tool()
+def get_version_info() -> dict[str, Any]:
+    """Get qrz-mcp service version and upstream QRZ API version.
+
+    Returns the running PyPI version of qrz-mcp and the QRZ.com XML +
+    Logbook API contract in use. Use this to confirm fleet alignment
+    across MCP deployments — agents can compare service_version and
+    spec_version across servers to detect drift without going outside
+    the MCP protocol.
+
+    Returns:
+        service_name, service_version (PyPI), and spec_version (QRZ API).
+    """
+    return _version_info_payload()
 
 
 @mcp.tool()
