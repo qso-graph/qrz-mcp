@@ -197,7 +197,7 @@ class TestQrzDownload:
     def test_record_count(self):
         """QRZ-L2-031: Download reports correct record count."""
         result = qrz_download(persona="test")
-        assert result["record_count"] == 2
+        assert result["record_count"] == 3
 
     def test_has_adif_header(self):
         """QRZ-L2-032: ADIF output includes header."""
@@ -211,6 +211,34 @@ class TestQrzDownload:
         result = qrz_download(persona="test")
         assert "KI7MT" in result["adif"]
         assert "W1AW" in result["adif"]
+
+    def test_output_is_importable_adif(self):
+        """QRZ-L2-034: output is a real .adi file, not QRZ's escaped payload.
+
+        QRZ sends "&lt;call:5&gt;"; emitting that verbatim would produce a file
+        no logger can import. Checks escaped *markers* specifically — escaped
+        text inside a comment value is legitimate operator data and must stay.
+        """
+        import re
+
+        adif = qrz_download(persona="test")["adif"]
+
+        assert not re.search(r"&lt;\w+:\d+(?::\w+)?&gt;", adif), "escaped markers in output"
+        assert not re.search(r"&lt;eor&gt;", adif, re.IGNORECASE)
+        assert adif.upper().count("<EOR>") == 3
+
+    def test_roundtrip_preserves_values(self):
+        """QRZ-L2-035: re-serialised ADIF parses back to the same values."""
+        from qrz_mcp.logbook_client import _parse_adif_records
+
+        adif = qrz_download(persona="test")["adif"]
+        records = _parse_adif_records(adif)
+
+        assert len(records) == 3
+        comments = {r.get("COMMENT") for r in records}
+        # Values containing "&", "+" and "%" survive the round trip intact.
+        assert "R&R net" in comments
+        assert "A+B 50%20C" in comments
 
 
 # ---------------------------------------------------------------------------
@@ -242,8 +270,8 @@ class TestQrzLogbookFetch:
     def test_returns_records(self):
         """QRZ-L2-039: Fetch returns mock QSO records."""
         result = qrz_logbook_fetch(persona="test")
-        assert result["total"] == 2
-        assert len(result["records"]) == 2
+        assert result["total"] == 3
+        assert len(result["records"]) == 3
 
     def test_record_fields(self):
         """QRZ-L2-040: Fetch records have expected fields."""
@@ -269,10 +297,17 @@ class TestQrzLogbookFetch:
             assert len(rec["qso_date"]) == 8
 
     def test_record_has_grid(self):
-        """QRZ-L2-043: Records include gridsquare."""
+        """QRZ-L2-043: Gridsquare is mapped through when QRZ supplies it.
+
+        Not every QSO carries a grid (QRZ omits unknown fields entirely), so
+        this asserts the mapping works rather than that the field is universal.
+        """
         result = qrz_logbook_fetch(persona="test")
-        for rec in result["records"]:
-            assert "gridsquare" in rec
+        with_grid = [r for r in result["records"] if "gridsquare" in r]
+
+        assert with_grid, "no record carried a gridsquare"
+        for rec in with_grid:
+            assert len(rec["gridsquare"]) >= 4
 
 
 # ---------------------------------------------------------------------------
@@ -281,15 +316,23 @@ class TestQrzLogbookFetch:
 
 
 class TestEscapedAdifWireFormat:
-    """Regression tests for #3 — QRZ returns HTML-escaped ADIF.
+    """Regression tests for #3, pinned to QRZ's actual wire format.
 
-    Live responses arrive as `&lt;call:6&gt;` / `&lt;eor&gt;`, and the escaped
-    payload's own `&` characters sit inside an `&`-delimited body. Parsing that
-    naively yielded 0 records while status reported the true count.
+    Confirmed against a live logbook by inserting QSOs with adversarial
+    comments and reading them back:
+
+      * ADIF *markers* are escaped (`&lt;call:6&gt;`), but field *values* are
+        passed through verbatim — a bare `&` arrives as `&`, not `&amp;`.
+      * `+` and `%` are literal; the payload is not URL-encoded.
+      * Entity-looking user text (`&amp;`) is returned as typed and must not
+        be unescaped, or it silently mutates.
+      * Declared lengths are in characters, not UTF-8 bytes.
+
+    So values must be consumed by declared length, and never rewritten.
     """
 
-    def test_kv_keeps_escaped_adif_intact(self):
-        """QRZ-L2-049: `&` inside entities must not split the ADIF value."""
+    def test_kv_keeps_adif_payload_verbatim(self):
+        """QRZ-L2-049: the ADIF value survives the "&"-delimited body intact."""
         from qrz_mcp.logbook_client import _parse_kv
 
         body = "RESULT=OK&COUNT=1&LOGIDS=1234&ADIF=&lt;call:6&gt;PU2UMK&lt;eor&gt;"
@@ -297,11 +340,11 @@ class TestEscapedAdifWireFormat:
 
         assert kv["RESULT"] == "OK"
         assert kv["LOGIDS"] == "1234"
-        # Value is unescaped and whole — not shredded into "lt;call:6" fragments.
-        assert kv["ADIF"] == "<call:6>PU2UMK<eor>"
+        # Not shredded into "lt;call:6" fragments, and not rewritten either.
+        assert kv["ADIF"] == "&lt;call:6&gt;PU2UMK&lt;eor&gt;"
 
     def test_parses_escaped_records(self):
-        """QRZ-L2-050: escaped ADIF yields records, not silence."""
+        """QRZ-L2-050: escaped markers yield records, not silence."""
         from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
 
         body = (
@@ -315,24 +358,79 @@ class TestEscapedAdifWireFormat:
         assert records[0]["CALL"] == "PU2UMK"
         assert records[0]["MODE"] == "FM"
 
-    def test_ampersand_in_value_survives(self):
-        """QRZ-L2-051: `&amp;` in a comment decodes once, without splitting."""
+    def test_bare_ampersand_in_value(self):
+        """QRZ-L2-051: a bare "&" in a comment is data, not a delimiter.
+
+        Live wire form: `&lt;comment:7&gt;R&R net`.
+        """
         from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
 
         body = (
             "RESULT=OK&ADIF="
-            "&lt;call:4&gt;W1AW&lt;comment:7&gt;R&amp;R net&lt;eor&gt;"
+            "&lt;call:4&gt;W1AW&lt;comment:7&gt;R&R net&lt;eor&gt;"
             "&lt;call:5&gt;KI7MT&lt;eor&gt;"
         )
         records = _parse_adif_records(_parse_kv(body)["ADIF"])
 
-        # Both records survive, and the literal "&" is preserved exactly.
         assert len(records) == 2
         assert records[0]["COMMENT"] == "R&R net"
         assert records[1]["CALL"] == "KI7MT"
 
+    def test_entity_like_text_not_unescaped(self):
+        """QRZ-L2-052: user text that looks like an entity must not decode.
+
+        Live wire form: `&lt;comment:23&gt;&amp; &lt; &gt; literal`, where the
+        value is exactly the 23 characters the operator typed.
+        """
+        from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
+
+        body = (
+            "RESULT=OK&ADIF="
+            "&lt;call:6&gt;PU2ORH&lt;comment:23&gt;&amp; &lt; &gt; literal&lt;eor&gt;"
+        )
+        records = _parse_adif_records(_parse_kv(body)["ADIF"])
+
+        assert len(records) == 1
+        assert records[0]["COMMENT"] == "&amp; &lt; &gt; literal"
+
+    def test_plus_and_percent_are_literal(self):
+        """QRZ-L2-053: payload is not URL-encoded; "+"/"%" survive as typed."""
+        from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
+
+        body = "RESULT=OK&ADIF=&lt;call:4&gt;W1AW&lt;comment:10&gt;A+B 50%20C&lt;eor&gt;"
+        records = _parse_adif_records(_parse_kv(body)["ADIF"])
+
+        # unquote_plus would corrupt this to "A B 50 C".
+        assert records[0]["COMMENT"] == "A+B 50%20C"
+
+    def test_markers_inside_value_are_not_structure(self):
+        """QRZ-L2-054: "<eor>" typed into a comment must not end the record."""
+        from qrz_mcp.logbook_client import _count_records, _parse_adif_records
+
+        adif = (
+            "&lt;call:4&gt;W1AW&lt;comment:16&gt;see <eor> marker&lt;eor&gt;"
+            "&lt;call:6&gt;PU2ORH&lt;eor&gt;"
+        )
+        records = _parse_adif_records(adif)
+
+        assert len(records) == 2
+        assert records[0]["COMMENT"] == "see <eor> marker"
+        # A naive substring count would report 3 records here.
+        assert _count_records(adif) == 2
+
+    def test_multibyte_length_is_characters(self):
+        """QRZ-L2-055: declared lengths count characters, not UTF-8 bytes."""
+        from qrz_mcp.logbook_client import _parse_adif_records
+
+        # "Açaí ñ Münch" is 12 characters but 16 UTF-8 bytes; QRZ declares 12.
+        records = _parse_adif_records(
+            "&lt;call:4&gt;W1AW&lt;comment:12&gt;Açaí ñ Münch&lt;eor&gt;"
+        )
+
+        assert records[0]["COMMENT"] == "Açaí ñ Münch"
+
     def test_unescaped_adif_still_parses(self):
-        """QRZ-L2-052: already-unescaped ADIF keeps working (back-compat)."""
+        """QRZ-L2-056: literal-marker ADIF keeps working (files, other tools)."""
         from qrz_mcp.logbook_client import _parse_adif_records
 
         records = _parse_adif_records("<CALL:4>W1AW<BAND:3>20M<EOR>")
@@ -341,7 +439,7 @@ class TestEscapedAdifWireFormat:
         assert records[0]["CALL"] == "W1AW"
 
     def test_overlong_length_terminates(self):
-        """QRZ-L2-053: a length overrunning the buffer must not hang."""
+        """QRZ-L2-057: a length overrunning the buffer must not hang."""
         from qrz_mcp.logbook_client import _parse_adif_records
 
         # Declared length (99) far exceeds the remaining text.
@@ -349,13 +447,18 @@ class TestEscapedAdifWireFormat:
 
         assert records == [{"CALL": "W1AW"}]
 
-    def test_mock_body_is_escaped(self):
-        """QRZ-L2-054: the fixture itself must use the real wire format."""
+    def test_mock_matches_real_wire_format(self):
+        """QRZ-L2-058: the fixture must mirror live traffic, not our wishes."""
         from qrz_mcp.logbook_client import _MOCK_FETCH_BODY
 
+        # Markers escaped...
         assert "&lt;" in _MOCK_FETCH_BODY and "&gt;" in _MOCK_FETCH_BODY
-        # No raw ADIF markers — otherwise the mock wouldn't exercise the bug.
         assert "<EOR>" not in _MOCK_FETCH_BODY
+        # ...values verbatim, including the cases confirmed live.
+        assert "R&R net" in _MOCK_FETCH_BODY
+        assert "A+B 50%20C" in _MOCK_FETCH_BODY
+        # ADIF is the final key.
+        assert _MOCK_FETCH_BODY.index("ADIF=") > _MOCK_FETCH_BODY.index("LOGIDS=")
 
 
 class TestGetVersionInfo:

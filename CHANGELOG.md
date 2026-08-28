@@ -9,21 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `qrz_logbook_fetch` and `qrz_download` returned 0 records for non-empty
-  logbooks ([#3](https://github.com/qso-graph/qrz-mcp/issues/3)). QRZ
-  HTML-escapes the ADIF payload, so its `&` characters (`&lt;`, `&gt;`,
-  `&amp;`) were treated as `key=value` delimiters and shredded the payload
-  before ADIF parsing ran. `_parse_kv` now splits only at an `&` that starts a
-  new `KEY=` pair and unescapes each value individually, which also preserves a
-  literal `&` inside QSO comments.
+  logbooks ([#3](https://github.com/qso-graph/qrz-mcp/issues/3)). QRZ escapes
+  the ADIF *markers* (`&lt;call:6&gt;`) but passes field *values* through
+  verbatim, so the payload contains raw `&` characters. Splitting the response
+  body on every `&` shredded it, leaving `ADIF` empty before parsing began.
+  `ADIF` is now read as the whole remainder of the body, and values are
+  consumed by their declared length instead of by delimiter scanning.
+- `qrz_download` emitted QRZ's escaped markers into the `.adi` output, so the
+  "raw ADIF" could not be imported by any logger. Records are now
+  re-serialised with literal markers.
+- QSO values are no longer URL-decoded or HTML-unescaped. Both corrupted real
+  data: `unquote_plus` turned a comment of `A+B 50%20C` into `A B 50 C`, and
+  unescaping mutated operator text that legitimately contained `&amp;`.
 - `_parse_adif_records` no longer stalls or rewinds when a declared field
-  length overruns the buffer.
+  length overruns the buffer, and a literal `<eor>` inside a comment no longer
+  truncates the record or inflates `record_count`.
+- Multibyte values are handled correctly: QRZ declares lengths in characters,
+  not UTF-8 bytes.
 
 ### Changed
-- Mock fixtures now use QRZ's real wire format (HTML-escaped ADIF in a raw
-  `&`-delimited body) and are decoded through the same parsing path as live
-  responses, so this class of regression fails the suite instead of passing
-  silently.
-- Added regression tests QRZ-L2-049 through QRZ-L2-054.
+- Mock fixtures are transcribed from live QRZ responses (escaped markers,
+  verbatim values, `ADIF` as the final key) and decode through the same
+  `_parse_kv` path as live traffic, so this class of regression fails the
+  suite instead of passing silently.
+- Added regression tests QRZ-L2-034/035 and QRZ-L2-049 through QRZ-L2-058,
+  covering bare `&`, `+`/`%`, entity-like text, embedded markers, multibyte
+  lengths, and `.adi` round-tripping.
+
+All behaviour above was confirmed against a live logbook by inserting QSOs
+with adversarial comments, reading them back, and deleting them afterwards.
 
 ## [0.3.3] — 2026-05-16
 
