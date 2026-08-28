@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import os
 import re
 import urllib.parse
@@ -17,23 +18,62 @@ _LOGBOOK_URL = "https://logbook.qrz.com/api"
 # ADIF field regex: <FIELD:LEN>VALUE or <FIELD:LEN:TYPE>VALUE
 _ADIF_FIELD_RE = re.compile(r"<(\w+):(\d+)(?::\w+)?>", re.IGNORECASE)
 
+# Escaped ADIF field marker, e.g. "&lt;call:6&gt;". Used only to detect whether
+# a payload is still HTML-escaped.
+_ESCAPED_ADIF_FIELD_RE = re.compile(r"&lt;\w+:\d+(?::\w+)?&gt;", re.IGNORECASE)
+
+# Response pairs are "&"-delimited, but QRZ HTML-escapes the ADIF payload, so
+# the value itself contains "&" (as "&lt;", "&gt;", "&amp;"). Split only on an
+# "&" that introduces a real "KEY=" pair, never on one inside an entity.
+_KV_SPLIT_RE = re.compile(r"&(?=[A-Za-z_][A-Za-z0-9_]*=)")
+
 
 def _is_mock() -> bool:
     return os.getenv("QRZ_MCP_MOCK") == "1"
 
 
 def _parse_kv(body: str) -> dict[str, str]:
-    """Parse QRZ logbook key=value response (& delimited)."""
+    """Parse a QRZ logbook key=value response.
+
+    QRZ returns "&"-delimited name=value pairs, but the ADIF payload is
+    HTML-entity-escaped, so its value legitimately contains "&" characters
+    ("&lt;", "&gt;", "&amp;"). Splitting the raw body on every "&" shreds that
+    payload into fragments, which is why ADIF parsing previously saw no
+    records at all.
+
+    Pairs are therefore split only at an "&" that introduces a new "KEY=" pair,
+    and each value is URL-decoded and then HTML-unescaped individually.
+    Unescaping per value (rather than the whole body up front) is what keeps a
+    literal "&" inside a QSO comment from being mistaken for a delimiter.
+    """
     result: dict[str, str] = {}
-    for pair in body.split("&"):
+    for pair in _KV_SPLIT_RE.split(body):
         if "=" in pair:
             k, v = pair.split("=", 1)
-            result[k.upper()] = urllib.parse.unquote_plus(v)
+            result[k.upper()] = html.unescape(urllib.parse.unquote_plus(v))
     return result
+
+
+def _unescape_adif(adif: str) -> str:
+    """Return ADIF text with literal angle brackets.
+
+    QRZ returns HTML-entity-escaped ADIF ("&lt;call:6&gt;"). Responses are
+    normally unescaped once in _parse_kv, so this is a safety net for ADIF that
+    arrives from another path. It unescapes only when the text still has no
+    usable literal field markers but does contain escaped ones, which keeps an
+    already-decoded "&amp;" inside a QSO comment from being decoded twice.
+    """
+    if _ADIF_FIELD_RE.search(adif):
+        return adif
+    if _ESCAPED_ADIF_FIELD_RE.search(adif):
+        return html.unescape(adif)
+    return adif
 
 
 def _parse_adif_records(adif: str) -> list[dict[str, str]]:
     """Parse ADIF text into a list of field dicts."""
+    adif = _unescape_adif(adif)
+
     records: list[dict[str, str]] = []
     current: dict[str, str] = {}
 
@@ -47,7 +87,7 @@ def _parse_adif_records(adif: str) -> list[dict[str, str]]:
 
     while pos < len(adif):
         # Check for <EOR>
-        if upper[pos:pos + 5] == "<EOR>":
+        if upper.startswith("<EOR>", pos):
             if current:
                 records.append(current)
                 current = {}
@@ -61,7 +101,9 @@ def _parse_adif_records(adif: str) -> list[dict[str, str]]:
             value_start = m.end()
             value = adif[value_start:value_start + length]
             current[field] = value.strip()
-            pos = value_start + length
+            # Never rewind or stall: a declared length that overruns the buffer
+            # would otherwise leave pos before the marker we just consumed.
+            pos = max(m.end(), min(value_start + length, len(adif)))
         else:
             pos += 1
 
@@ -69,6 +111,14 @@ def _parse_adif_records(adif: str) -> list[dict[str, str]]:
         records.append(current)
 
     return records
+
+
+_ADIF_HEADER = "<ADIF_VER:5>3.1.6\n<PROGRAMID:7>qrz-mcp\n<EOH>\n"
+
+
+def _count_records(adif_text: str) -> int:
+    """Count QSO records in ADIF text via its <EOR> markers."""
+    return _unescape_adif(adif_text).upper().count("<EOR>")
 
 
 def _adif_to_qso(rec: dict[str, str]) -> QsoRecord:
@@ -107,13 +157,29 @@ def _adif_to_qso(rec: dict[str, str]) -> QsoRecord:
 
 
 # Mock responses
+#
+# These deliberately mirror QRZ's real wire format: a raw "&"-delimited body
+# whose ADIF payload is HTML-entity-escaped. Mock mode feeds these through the
+# same _parse_kv path as live responses, so a parser that only understands
+# unescaped ADIF fails the test suite instead of silently returning 0 records.
 _MOCK_STATUS_BODY = "RESULT=OK&COUNT=1547&DXCC=142&US_STATES=48&CONFIRMED=892&OWNER=KI7MT&START=20180101&END=20260301"
 
+# Unescaped form, kept readable; escaped on the way into the mock body below.
 _MOCK_FETCH_ADIF = (
-    "<CALL:5>KI7MT<BAND:3>20M<MODE:3>FT8<QSO_DATE:8>20260301<TIME_ON:6>012345"
-    "<RST_SENT:3>-10<RST_RCVD:3>-12<GRIDSQUARE:6>DN13sa<DXCC:3>291<COUNTRY:13>United States<EOR>"
-    "<CALL:4>W1AW<BAND:3>40M<MODE:2>CW<QSO_DATE:8>20260228<TIME_ON:6>200000"
-    "<RST_SENT:3>599<RST_RCVD:3>599<GRIDSQUARE:6>FN31pr<DXCC:3>291<COUNTRY:13>United States<EOR>"
+    "<APP_QRZLOG_LOGID:4>1001<CALL:5>KI7MT<BAND:3>20M<MODE:3>FT8"
+    "<QSO_DATE:8>20260301<TIME_ON:6>012345"
+    "<RST_SENT:3>-10<RST_RCVD:3>-12<GRIDSQUARE:6>DN13sa<DXCC:3>291"
+    "<COUNTRY:13>United States<EOR>\n"
+    "<APP_QRZLOG_LOGID:4>1002<CALL:4>W1AW<BAND:3>40M<MODE:2>CW"
+    "<QSO_DATE:8>20260228<TIME_ON:6>200000"
+    "<RST_SENT:3>599<RST_RCVD:3>599<GRIDSQUARE:6>FN31pr<DXCC:3>291"
+    "<COUNTRY:13>United States<COMMENT:7>R&R net<EOR>\n"
+)
+
+# Exactly what QRZ puts on the wire: escaped ADIF inside an "&"-delimited body.
+_MOCK_FETCH_BODY = (
+    "RESULT=OK&COUNT=2&LOGIDS=1001,1002&ADIF="
+    + html.escape(_MOCK_FETCH_ADIF, quote=False)
 )
 
 
@@ -227,7 +293,10 @@ class LogbookClient:
     ) -> list[QsoRecord]:
         """Fetch QSOs with filters. Transparently paginates via AFTERLOGID."""
         if _is_mock():
-            records = _parse_adif_records(_MOCK_FETCH_ADIF)
+            # Decode the mock exactly like a live response, so mock mode
+            # exercises the real key=value + escaped-ADIF parsing path.
+            adif = _parse_kv(_MOCK_FETCH_BODY).get("ADIF", "")
+            records = _parse_adif_records(adif)
             return [_adif_to_qso(r) for r in records[:limit]]
 
         all_qsos: list[QsoRecord] = []
@@ -282,10 +351,9 @@ class LogbookClient:
         and wraps with a proper ADIF header.
         """
         if _is_mock():
-            header = "<ADIF_VER:5>3.1.6\n<PROGRAMID:7>qrz-mcp\n<EOH>\n"
-            adif_text = header + _MOCK_FETCH_ADIF
-            record_count = adif_text.upper().count("<EOR>")
-            return {"adif": adif_text, "record_count": record_count}
+            adif = _parse_kv(_MOCK_FETCH_BODY).get("ADIF", "")
+            adif_text = _ADIF_HEADER + adif
+            return {"adif": adif_text, "record_count": _count_records(adif_text)}
 
         fragments: list[str] = []
         after_logid: str | None = None
@@ -317,8 +385,6 @@ class LogbookClient:
             else:
                 break
 
-        header = "<ADIF_VER:5>3.1.6\n<PROGRAMID:7>qrz-mcp\n<EOH>\n"
         body = "\n".join(fragments)
-        adif_text = header + body
-        record_count = adif_text.upper().count("<EOR>")
-        return {"adif": adif_text, "record_count": record_count}
+        adif_text = _ADIF_HEADER + body
+        return {"adif": adif_text, "record_count": _count_records(adif_text)}

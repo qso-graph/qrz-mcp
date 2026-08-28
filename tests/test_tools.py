@@ -280,6 +280,84 @@ class TestQrzLogbookFetch:
 # ---------------------------------------------------------------------------
 
 
+class TestEscapedAdifWireFormat:
+    """Regression tests for #3 — QRZ returns HTML-escaped ADIF.
+
+    Live responses arrive as `&lt;call:6&gt;` / `&lt;eor&gt;`, and the escaped
+    payload's own `&` characters sit inside an `&`-delimited body. Parsing that
+    naively yielded 0 records while status reported the true count.
+    """
+
+    def test_kv_keeps_escaped_adif_intact(self):
+        """QRZ-L2-049: `&` inside entities must not split the ADIF value."""
+        from qrz_mcp.logbook_client import _parse_kv
+
+        body = "RESULT=OK&COUNT=1&LOGIDS=1234&ADIF=&lt;call:6&gt;PU2UMK&lt;eor&gt;"
+        kv = _parse_kv(body)
+
+        assert kv["RESULT"] == "OK"
+        assert kv["LOGIDS"] == "1234"
+        # Value is unescaped and whole — not shredded into "lt;call:6" fragments.
+        assert kv["ADIF"] == "<call:6>PU2UMK<eor>"
+
+    def test_parses_escaped_records(self):
+        """QRZ-L2-050: escaped ADIF yields records, not silence."""
+        from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
+
+        body = (
+            "RESULT=OK&COUNT=1&ADIF="
+            "&lt;call:6&gt;PU2UMK&lt;mode:2&gt;FM&lt;band:3&gt;20M"
+            "&lt;qso_date:8&gt;20260301&lt;time_on:4&gt;1500&lt;eor&gt;"
+        )
+        records = _parse_adif_records(_parse_kv(body)["ADIF"])
+
+        assert len(records) == 1
+        assert records[0]["CALL"] == "PU2UMK"
+        assert records[0]["MODE"] == "FM"
+
+    def test_ampersand_in_value_survives(self):
+        """QRZ-L2-051: `&amp;` in a comment decodes once, without splitting."""
+        from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
+
+        body = (
+            "RESULT=OK&ADIF="
+            "&lt;call:4&gt;W1AW&lt;comment:7&gt;R&amp;R net&lt;eor&gt;"
+            "&lt;call:5&gt;KI7MT&lt;eor&gt;"
+        )
+        records = _parse_adif_records(_parse_kv(body)["ADIF"])
+
+        # Both records survive, and the literal "&" is preserved exactly.
+        assert len(records) == 2
+        assert records[0]["COMMENT"] == "R&R net"
+        assert records[1]["CALL"] == "KI7MT"
+
+    def test_unescaped_adif_still_parses(self):
+        """QRZ-L2-052: already-unescaped ADIF keeps working (back-compat)."""
+        from qrz_mcp.logbook_client import _parse_adif_records
+
+        records = _parse_adif_records("<CALL:4>W1AW<BAND:3>20M<EOR>")
+
+        assert len(records) == 1
+        assert records[0]["CALL"] == "W1AW"
+
+    def test_overlong_length_terminates(self):
+        """QRZ-L2-053: a length overrunning the buffer must not hang."""
+        from qrz_mcp.logbook_client import _parse_adif_records
+
+        # Declared length (99) far exceeds the remaining text.
+        records = _parse_adif_records("<CALL:99>W1AW")
+
+        assert records == [{"CALL": "W1AW"}]
+
+    def test_mock_body_is_escaped(self):
+        """QRZ-L2-054: the fixture itself must use the real wire format."""
+        from qrz_mcp.logbook_client import _MOCK_FETCH_BODY
+
+        assert "&lt;" in _MOCK_FETCH_BODY and "&gt;" in _MOCK_FETCH_BODY
+        # No raw ADIF markers — otherwise the mock wouldn't exercise the bug.
+        assert "<EOR>" not in _MOCK_FETCH_BODY
+
+
 class TestGetVersionInfo:
     """Tracks IONIS-AI/ionis-devel#49 — fleet get_version_info convention."""
 
