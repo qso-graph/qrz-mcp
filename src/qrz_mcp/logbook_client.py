@@ -107,7 +107,20 @@ def _adif_to_qso(rec: dict[str, str]) -> QsoRecord:
 
 
 # Mock responses
-_MOCK_STATUS_BODY = "RESULT=OK&COUNT=1547&DXCC=142&US_STATES=48&CONFIRMED=892&OWNER=KI7MT&START=20180101&END=20260301"
+#
+# Transcribed from a live ACTION=STATUS response so the fixture reflects the
+# key names QRZ actually sends (DXCC_COUNT / START_DATE / END_DATE, ISO dates,
+# plus BOOKID / BOOK_NAME / CALLSIGN), not the ones this client once assumed.
+# The previous fixture used DXCC / START / END, so the tests passed while every
+# live call returned 0 for those fields.
+#
+# No US-states key is included: none appears in live responses, and inventing
+# one would re-create exactly the false-confidence bug this fixture caused.
+_MOCK_STATUS_BODY = (
+    "RESULT=OK&ACTION=STATUS&COUNT=1547&CONFIRMED=892&DXCC_COUNT=142"
+    "&OWNER=KI7MT&CALLSIGN=KI7MT&BOOKID=406135&BOOK_NAME=KI7MT Logbook"
+    "&START_DATE=2018-01-01&END_DATE=2026-03-01"
+)
 
 _MOCK_FETCH_ADIF = (
     "<CALL:5>KI7MT<BAND:3>20M<MODE:3>FT8<QSO_DATE:8>20260301<TIME_ON:6>012345"
@@ -164,26 +177,48 @@ class LogbookClient:
         return kv
 
     def status(self) -> LogbookStatus:
-        """Get logbook statistics."""
+        """Get logbook statistics.
+
+        QRZ's STATUS response uses different key names than the ones this
+        client originally read (`DXCC_COUNT` not `DXCC`, `START_DATE` not
+        `START`, `END_DATE` not `END`), so several fields silently returned
+        0/"" against live data. Each output field is resolved from a list of
+        accepted spellings, which fixes the mismatch without breaking if QRZ
+        reverts to, or has historically used, the shorter names.
+        """
         if _is_mock():
             kv = _parse_kv(_MOCK_STATUS_BODY)
         else:
             kv = self._post({"ACTION": "STATUS"})
 
-        def _int(key: str) -> int:
+        def _first(*keys: str) -> str:
+            """Return the first key present with a non-empty value."""
+            for key in keys:
+                value = kv.get(key, "")
+                if value:
+                    return value
+            return ""
+
+        def _int(*keys: str) -> int:
             try:
-                return int(kv.get(key, "0"))
+                return int(_first(*keys))
             except ValueError:
                 return 0
 
         return LogbookStatus(
-            callsign=kv.get("OWNER", ""),
+            # OWNER is the account holder; CALLSIGN is the book's callsign.
+            # They match on single-callsign books and OWNER is the documented
+            # field, so it stays preferred.
+            callsign=_first("OWNER", "CALLSIGN"),
             count=_int("COUNT"),
             confirmed=_int("CONFIRMED"),
-            dxcc=_int("DXCC"),
-            us_states=_int("US_STATES"),
-            start_date=kv.get("START", ""),
-            end_date=kv.get("END", ""),
+            dxcc=_int("DXCC_COUNT", "DXCC"),
+            # No US-states key appears in live responses. It is unclear
+            # whether QRZ renames it or omits it when zero, so both plausible
+            # spellings are accepted and the field defaults to 0.
+            us_states=_int("US_STATES_COUNT", "US_STATES"),
+            start_date=_first("START_DATE", "START"),
+            end_date=_first("END_DATE", "END"),
         )
 
     def _build_options(

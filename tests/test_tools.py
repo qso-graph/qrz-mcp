@@ -232,6 +232,111 @@ class TestQrzLogbookStatus:
         for field in ("count", "dxcc", "callsign"):
             assert field in result, f"Missing field: {field}"
 
+    def test_date_range_populated(self):
+        """QRZ-L2-038: date range is populated, not left empty.
+
+        Regression for #5: the client read START/END while QRZ sends
+        START_DATE/END_DATE, so both silently returned "".
+        """
+        result = qrz_logbook_status(persona="test")
+
+        assert result["start_date"] == "2018-01-01"
+        assert result["end_date"] == "2026-03-01"
+
+
+# ---------------------------------------------------------------------------
+# QRZ-L2-049..054: STATUS field-name handling (#5)
+# ---------------------------------------------------------------------------
+
+
+class TestStatusFieldNames:
+    """Regression tests for #5, pinned to the live STATUS wire format.
+
+    A real response (verbatim, key redacted):
+
+        END_DATE=2044-07-25&BOOK_NAME=PU2UMK Logbook&RESULT=OK&OWNER=PU2UMK
+        &DXCC_COUNT=1&BOOKID=406135&START_DATE=2024-09-03&ACTION=STATUS
+        &CONFIRMED=3&CALLSIGN=PU2UMK&COUNT=30
+
+    Note DXCC_COUNT / START_DATE / END_DATE, and that no US-states key is
+    present at all.
+    """
+
+    LIVE_BODY = (
+        "END_DATE=2044-07-25&BOOK_NAME=PU2UMK Logbook&RESULT=OK&OWNER=PU2UMK"
+        "&DXCC_COUNT=1&BOOKID=406135&START_DATE=2024-09-03&ACTION=STATUS"
+        "&CONFIRMED=3&CALLSIGN=PU2UMK&COUNT=30"
+    )
+
+    def _status_from(self, body, monkeypatch):
+        """Drive LogbookClient.status() from a canned response body."""
+        from qrz_mcp.logbook_client import LogbookClient, _parse_kv
+        from qrz_mcp.rate_limiter import RateLimiter
+
+        client = LogbookClient(RateLimiter(min_delay=0.0))
+        monkeypatch.setattr(client, "_post", lambda params: _parse_kv(body))
+        monkeypatch.setenv("QRZ_MCP_MOCK", "0")
+        return client.status()
+
+    def test_live_response_fully_parsed(self, monkeypatch):
+        """QRZ-L2-049: every field resolves against a real STATUS body."""
+        st = self._status_from(self.LIVE_BODY, monkeypatch)
+
+        assert st["callsign"] == "PU2UMK"
+        assert st["count"] == 30
+        assert st["confirmed"] == 3
+        assert st["dxcc"] == 1              # was 0: read DXCC, not DXCC_COUNT
+        assert st["start_date"] == "2024-09-03"  # was ""
+        assert st["end_date"] == "2044-07-25"    # was ""
+
+    def test_legacy_short_names_still_work(self, monkeypatch):
+        """QRZ-L2-050: the older DXCC/START/END spellings remain accepted."""
+        body = (
+            "RESULT=OK&COUNT=10&CONFIRMED=2&DXCC=5&US_STATES=7"
+            "&OWNER=W1AW&START=20180101&END=20260301"
+        )
+        st = self._status_from(body, monkeypatch)
+
+        assert st["dxcc"] == 5
+        assert st["us_states"] == 7
+        assert st["start_date"] == "20180101"
+        assert st["end_date"] == "20260301"
+
+    def test_missing_keys_degrade_to_defaults(self, monkeypatch):
+        """QRZ-L2-051: absent fields yield 0/"" rather than raising."""
+        st = self._status_from("RESULT=OK&COUNT=3", monkeypatch)
+
+        assert st["count"] == 3
+        assert st["dxcc"] == 0
+        assert st["us_states"] == 0
+        assert st["start_date"] == ""
+
+    def test_non_numeric_counter_does_not_raise(self, monkeypatch):
+        """QRZ-L2-052: a malformed counter falls back to 0."""
+        st = self._status_from("RESULT=OK&COUNT=abc&DXCC_COUNT=x", monkeypatch)
+
+        assert st["count"] == 0
+        assert st["dxcc"] == 0
+
+    def test_callsign_prefers_owner(self, monkeypatch):
+        """QRZ-L2-053: OWNER wins over CALLSIGN when the two differ."""
+        body = "RESULT=OK&COUNT=1&OWNER=W1AW&CALLSIGN=W1AW/P"
+        st = self._status_from(body, monkeypatch)
+
+        assert st["callsign"] == "W1AW"
+
+    def test_mock_uses_real_key_names(self):
+        """QRZ-L2-054: the fixture must mirror live traffic, not our wishes."""
+        from qrz_mcp.logbook_client import _MOCK_STATUS_BODY
+
+        assert "DXCC_COUNT=" in _MOCK_STATUS_BODY
+        assert "START_DATE=" in _MOCK_STATUS_BODY
+        assert "END_DATE=" in _MOCK_STATUS_BODY
+        # The old spellings must not reappear as standalone keys.
+        assert "&DXCC=" not in _MOCK_STATUS_BODY
+        assert "&START=" not in _MOCK_STATUS_BODY
+        assert "&END=" not in _MOCK_STATUS_BODY
+
 
 # ---------------------------------------------------------------------------
 # QRZ-L2-039..045: qrz_logbook_fetch
