@@ -6,13 +6,18 @@ import os
 import re
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, Iterator
 
 from . import __version__
 from .rate_limiter import RateLimiter
 from .types import LogbookStatus, QsoRecord
 
 _LOGBOOK_URL = "https://logbook.qrz.com/api"
+
+# QRZ paging guidance: MAX:250,AFTERLOGID:n in OPTION, advancing n until a
+# page comes back short. _MAX_PAGES is a runaway guard (~50,000 QSOs).
+_PAGE_SIZE = 250
+_MAX_PAGES = 200
 
 # ADIF field marker: <FIELD:LEN>VALUE or <FIELD:LEN:TYPE>VALUE.
 # Matches both the literal form and QRZ's escaped form ("&lt;call:6&gt;"), so
@@ -33,6 +38,18 @@ _ADIF_KEY_RE = re.compile(r"(?:^|&)ADIF=", re.IGNORECASE)
 
 def _is_mock() -> bool:
     return os.getenv("QRZ_MCP_MOCK") == "1"
+
+
+def _iso_date(d: str) -> str:
+    """Normalise YYYYMMDD or YYYY-MM-DD to YYYY-MM-DD (QRZ's BETWEEN format)."""
+    d = d.strip()
+    if re.fullmatch(r"\d{8}", d):
+        return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+    return d
+
+
+def _qso_sort_key(qso: QsoRecord) -> tuple[str, str]:
+    return (qso.get("qso_date", ""), qso.get("time_on", ""))
 
 
 def _parse_kv(body: str) -> dict[str, str]:
@@ -347,13 +364,51 @@ class LogbookClient:
             options.append(f"CALL:{callsign.upper()}")
         if dxcc is not None:
             options.append(f"DXCC:{dxcc}")
-        if start_date:
-            options.append(f"AFTER:{start_date.replace('-', '')}")
-        if end_date:
-            options.append(f"BEFORE:{end_date.replace('-', '')}")
+        if start_date or end_date:
+            # QRZ has no AFTER/BEFORE options; the date filter is
+            # BETWEEN:YYYY-MM-DD+YYYY-MM-DD. An open end gets a wide default.
+            start = _iso_date(start_date) if start_date else "1900-01-01"
+            end = _iso_date(end_date) if end_date else "2100-12-31"
+            options.append(f"BETWEEN:{start}+{end}")
         if confirmed_only:
             options.append("STATUS:CONFIRMED")
         return options
+
+    def _iter_pages(
+        self, filters: list[str], page_size: int = _PAGE_SIZE,
+    ) -> Iterator[list[dict[str, str]]]:
+        """Yield parsed records page by page, oldest first.
+
+        Follows QRZ's paging guidance. MAX and AFTERLOGID are OPTION values
+        (QRZ rejects unrecognized POST parameters), and the next AFTERLOGID is
+        the highest app_qrzlog_logid seen plus one, because AFTERLOGID is
+        inclusive. The cursor comes from the records themselves: ADIF-type
+        FETCH responses carry no LOGIDS key. Stops when a page has fewer than
+        `page_size` records.
+        """
+        after = 0
+        for _ in range(_MAX_PAGES):
+            options = [*filters, f"MAX:{page_size}", f"AFTERLOGID:{after}"]
+            kv = self._post({"ACTION": "FETCH", "OPTION": ",".join(options)})
+
+            adif = kv.get("ADIF", "")
+            records = _parse_adif_records(adif) if adif else []
+            if not records:
+                return
+
+            yield records
+
+            logids = [
+                int(r["APP_QRZLOG_LOGID"])
+                for r in records
+                if r.get("APP_QRZLOG_LOGID", "").isdigit()
+            ]
+            if len(records) < page_size or not logids:
+                return
+            next_after = max(logids) + 1
+            if next_after <= after:  # no progress: never loop
+                return
+            after = next_after
 
     def fetch(
         self,
@@ -365,53 +420,40 @@ class LogbookClient:
         end_date: str | None = None,
         confirmed_only: bool = False,
         limit: int = 250,
+        newest_first: bool = False,
     ) -> list[QsoRecord]:
-        """Fetch QSOs with filters. Transparently paginates via AFTERLOGID."""
+        """Fetch QSOs with filters, paging through the logbook as needed.
+
+        QRZ returns records oldest first. By default this keeps the first
+        `limit` matches in that order. With newest_first=True it returns the
+        newest `limit` matches, newest first (this needs every matching page).
+        """
         if _is_mock():
             # Decode the mock exactly like a live response, so mock mode
             # exercises the real key=value + escaped-ADIF parsing path.
             adif = _parse_kv(_MOCK_FETCH_BODY).get("ADIF", "")
-            records = _parse_adif_records(adif)
-            return [_adif_to_qso(r) for r in records[:limit]]
+            qsos = [_adif_to_qso(r) for r in _parse_adif_records(adif)]
+            if newest_first:
+                qsos.sort(key=_qso_sort_key, reverse=True)
+            return qsos[:limit]
 
-        all_qsos: list[QsoRecord] = []
-        after_logid: str | None = None
+        if limit <= 0:
+            return []
+
         options = self._build_options(band, mode, callsign, dxcc, start_date, end_date, confirmed_only)
 
-        while len(all_qsos) < limit:
-            params: dict[str, str] = {"ACTION": "FETCH"}
-            if options:
-                params["OPTION"] = ",".join(options)
-            if after_logid:
-                params["AFTERLOGID"] = after_logid
+        all_qsos: list[QsoRecord] = []
+        if newest_first:
+            for records in self._iter_pages(options):
+                all_qsos.extend(_adif_to_qso(r) for r in records)
+            all_qsos.sort(key=_qso_sort_key, reverse=True)
+            return all_qsos[:limit]
 
-            kv = self._post(params)
-
-            adif = kv.get("ADIF", "")
-            if not adif:
+        for records in self._iter_pages(options, page_size=min(_PAGE_SIZE, limit)):
+            all_qsos.extend(_adif_to_qso(r) for r in records)
+            if len(all_qsos) >= limit:
                 break
-
-            records = _parse_adif_records(adif)
-            if not records:
-                break
-
-            for rec in records:
-                if len(all_qsos) >= limit:
-                    break
-                all_qsos.append(_adif_to_qso(rec))
-
-            # Pagination cursor
-            logids = kv.get("LOGIDS", "")
-            if logids:
-                last_id = logids.split(",")[-1].strip()
-                if last_id and last_id != after_logid:
-                    after_logid = last_id
-                else:
-                    break
-            else:
-                break
-
-        return all_qsos
+        return all_qsos[:limit]
 
     def download_adif(
         self,
@@ -435,35 +477,11 @@ class LogbookClient:
             adif_text = _ADIF_HEADER + _records_to_adif(records)
             return {"adif": adif_text, "record_count": len(records)}
 
-        all_records: list[dict[str, str]] = []
-        after_logid: str | None = None
         options = self._build_options(band=band, mode=mode, start_date=start_date, end_date=end_date)
 
-        while True:
-            params: dict[str, str] = {"ACTION": "FETCH"}
-            if options:
-                params["OPTION"] = ",".join(options)
-            if after_logid:
-                params["AFTERLOGID"] = after_logid
-
-            kv = self._post(params)
-
-            adif = kv.get("ADIF", "")
-            if not adif:
-                break
-
-            all_records.extend(_parse_adif_records(adif))
-
-            # Pagination cursor
-            logids = kv.get("LOGIDS", "")
-            if logids:
-                last_id = logids.split(",")[-1].strip()
-                if last_id and last_id != after_logid:
-                    after_logid = last_id
-                else:
-                    break
-            else:
-                break
+        all_records: list[dict[str, str]] = []
+        for records in self._iter_pages(options):
+            all_records.extend(records)
 
         adif_text = _ADIF_HEADER + _records_to_adif(all_records)
         return {"adif": adif_text, "record_count": len(all_records)}
