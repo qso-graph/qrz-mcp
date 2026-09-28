@@ -29,24 +29,35 @@ pip install qrz-mcp
 
 ### 1. Set up credentials
 
-qrz-mcp uses qso-graph-auth personas for credential management. QRZ has **two separate auth mechanisms** — set up whichever you need:
+qrz-mcp uses qso-graph-auth personas for credential management. QRZ has **two separate auth mechanisms**, exposed as two providers — set up whichever you need:
+
+| Provider | Tools | Credentials |
+|----------|-------|-------------|
+| `qrz` | `qrz_lookup`, `qrz_dxcc` | username + password |
+| `qrz_logbook` | `qrz_logbook_status`, `qrz_logbook_fetch`, `qrz_download` | username + API key |
 
 ```bash
 # Install qso-graph-auth if you haven't
 pip install qso-graph-auth
 
-# Create a persona
-qso-auth persona create ki7mt --callsign KI7MT
+# Create a persona (--start is required)
+qso-auth persona add --name ki7mt --callsign KI7MT --start 2018-01-01
 
-# Enable QRZ provider
-qso-auth persona provider ki7mt qrz --username KI7MT
+# XML API (qrz_lookup, qrz_dxcc)
+qso-auth provider enable ki7mt qrz
+qso-auth creds set ki7mt qrz --username KI7MT --password YOUR_PASSWORD
 
-# Set password (for XML API: qrz_lookup, qrz_dxcc)
-qso-auth persona secret ki7mt qrz
+# Logbook API (qrz_logbook_status, qrz_logbook_fetch, qrz_download)
+qso-auth provider enable ki7mt qrz_logbook
+qso-auth creds set ki7mt qrz_logbook --username KI7MT --api-key YOUR_API_KEY
 
-# Set API key (for Logbook API: qrz_logbook_status, qrz_logbook_fetch)
-qso-auth creds set --persona ki7mt --provider qrz --api-key YOUR_API_KEY
+# Verify
+qso-auth creds doctor
 ```
+
+Pass the persona name (`ki7mt` above) as the `persona` argument on every tool call.
+
+> Omit `--password` / `--api-key` to be prompted instead — passing secrets as CLI arguments leaves them in your shell history.
 
 **XML API** (callsign lookup, DXCC) requires a QRZ XML Subscription ($35.95/yr). Free tier returns name and address only.
 
@@ -162,7 +173,7 @@ QRZ enforces undocumented rate limits that can trigger **24-hour IP bans**. qrz-
 
 ## Testing Without Credentials
 
-Set the mock environment variable to test all 4 tools without QRZ credentials:
+Set the mock environment variable to test all 6 tools without QRZ credentials:
 
 ```bash
 QRZ_MCP_MOCK=1 qrz-mcp
