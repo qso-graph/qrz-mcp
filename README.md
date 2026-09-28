@@ -11,7 +11,8 @@ Part of the [qso-graph](https://qso-graph.io/) project. Uses [qso-graph-auth](ht
 ## Install
 
 ```bash
-pip install qrz-mcp
+uvx qrz-mcp            # run it; nothing to install
+pip install qrz-mcp    # or install it into your own environment
 ```
 
 ## Tools
@@ -38,7 +39,7 @@ qrz-mcp uses qso-graph-auth personas for credential management. QRZ has **two se
 
 ```bash
 # Install qso-graph-auth if you haven't
-pip install qso-graph-auth
+uv tool install qso-graph-auth
 
 # Create a persona (--start is required)
 qso-auth persona add --name ki7mt --callsign KI7MT --start 2018-01-01
@@ -75,7 +76,8 @@ Add to `claude_desktop_config.json` (`~/Library/Application Support/Claude/` on 
 {
   "mcpServers": {
     "qrz": {
-      "command": "qrz-mcp"
+      "command": "uvx",
+      "args": ["qrz-mcp"]
     }
   }
 }
@@ -89,7 +91,8 @@ Add to `.claude/settings.json`:
 {
   "mcpServers": {
     "qrz": {
-      "command": "qrz-mcp"
+      "command": "uvx",
+      "args": ["qrz-mcp"]
     }
   }
 }
@@ -103,7 +106,8 @@ ChatGPT supports MCP via the [OpenAI Agents SDK](https://developers.openai.com/a
 {
   "mcpServers": {
     "qrz": {
-      "command": "qrz-mcp"
+      "command": "uvx",
+      "args": ["qrz-mcp"]
     }
   }
 }
@@ -117,7 +121,8 @@ Add to `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global):
 {
   "mcpServers": {
     "qrz": {
-      "command": "qrz-mcp"
+      "command": "uvx",
+      "args": ["qrz-mcp"]
     }
   }
 }
@@ -131,7 +136,8 @@ Add to `.vscode/mcp.json` in your workspace:
 {
   "servers": {
     "qrz": {
-      "command": "qrz-mcp"
+      "command": "uvx",
+      "args": ["qrz-mcp"]
     }
   }
 }
@@ -145,11 +151,14 @@ Add to `~/.gemini/settings.json` (global) or `.gemini/settings.json` (project):
 {
   "mcpServers": {
     "qrz": {
-      "command": "qrz-mcp"
+      "command": "uvx",
+      "args": ["qrz-mcp"]
     }
   }
 }
 ```
+
+Installed with pip instead? Use `"command": "qrz-mcp"` in any config above.
 
 ### 3. Ask questions
 
@@ -192,7 +201,8 @@ Then open the MCP Inspector at `http://localhost:8002`.
 ```bash
 git clone https://github.com/qso-graph/qrz-mcp.git
 cd qrz-mcp
-pip install -e .
+uv sync --group dev
+uv run pytest
 ```
 
 ## QRZ Subscription Tiers
