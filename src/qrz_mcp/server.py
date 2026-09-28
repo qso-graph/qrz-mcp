@@ -52,7 +52,8 @@ def _logbook(persona: str) -> LogbookClient:
     if persona not in _logbook_clients:
         client = LogbookClient(_rate_limiter)
         if not _is_mock():
-            username, api_key = _pm().require(persona, "qrz_logbook")
+            # The logbook authenticates with an API key; never send a stored password (#10).
+            username, api_key = _pm().require(persona, "qrz_logbook", prefer="api_key")
             client.configure(api_key, callsign=username)
         _logbook_clients[persona] = client
     return _logbook_clients[persona]
@@ -183,10 +184,14 @@ def qrz_logbook_fetch(
     end_date: str | None = None,
     confirmed_only: bool = False,
     limit: int = 250,
+    newest_first: bool = False,
 ) -> dict[str, Any]:
     """Query QSOs from a QRZ logbook with optional filters.
 
-    Transparently paginates to collect up to `limit` records.
+    Transparently paginates to collect up to `limit` records. QRZ returns
+    records oldest first, so by default `limit` keeps the OLDEST matches. Set
+    `newest_first` for the most recent QSOs instead (for example, "my last 10
+    contacts" is limit=10 with newest_first=true).
 
     Args:
         persona: Persona name configured in adif-mcp.
@@ -198,6 +203,7 @@ def qrz_logbook_fetch(
         end_date: Date range end (YYYY-MM-DD).
         confirmed_only: Only return confirmed QSOs.
         limit: Maximum records to return (default 250).
+        newest_first: Return the newest `limit` matches, newest first.
 
     Returns:
         Total count and list of QSO records.
@@ -212,6 +218,7 @@ def qrz_logbook_fetch(
             end_date=end_date,
             confirmed_only=confirmed_only,
             limit=limit,
+            newest_first=newest_first,
         )
         return {"total": len(qsos), "records": [dict(q) for q in qsos]}
     except Exception as e:

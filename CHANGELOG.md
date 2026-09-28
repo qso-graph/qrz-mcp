@@ -5,6 +5,85 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] — 2026-09-28
+
+Thanks to three contributors: **[@MicaelJarniac](https://github.com/MicaelJarniac)** (#2, #3, #5 and
+PRs #4, #6, #7) and **[@ssamjung2](https://github.com/ssamjung2)** (#9, #10), who found these on
+live logbooks and sent the fixes.
+
+### Security
+
+- **The logbook API key could be sent as the password** (#10, reported and fixed by @ssamjung2).
+  With both a password and an API key stored, the password was sent to QRZ as the logbook
+  key. Fixed in qso-graph-auth 0.1.2, now required, and qrz-mcp asks for the API key
+  explicitly.
+- **Dates are validated strictly.** User-supplied dates go into QRZ's comma-separated `OPTION`
+  string, and anything that wasn't `YYYYMMDD` passed through unchecked, so a date could add
+  options of its own. Only real `YYYY-MM-DD` or `YYYYMMDD` dates are accepted now.
+
+### Fixed
+
+- **Date filters, paging and newest QSOs** (#9, by @ssamjung2): dates use QRZ's documented
+  `BETWEEN:start+end` (every dated fetch used to fail with "unknown"); paging uses
+  `MAX:250,AFTERLOGID:n` inside `OPTION`, so large logbooks page correctly; opt-in
+  `newest_first` on fetch.
+
+### Fixed
+- `qrz_logbook_fetch` and `qrz_download` returned 0 records for non-empty
+  logbooks ([#3](https://github.com/qso-graph/qrz-mcp/issues/3)). QRZ escapes
+  the ADIF *markers* (`&lt;call:6&gt;`) but passes field *values* through
+  verbatim, so the payload contains raw `&` characters. Splitting the response
+  body on every `&` shredded it, leaving `ADIF` empty before parsing began.
+  `ADIF` is now read as the whole remainder of the body, and values are
+  consumed by their declared length instead of by delimiter scanning.
+- `qrz_download` emitted QRZ's escaped markers into the `.adi` output, so the
+  "raw ADIF" could not be imported by any logger. Records are now
+  re-serialised with literal markers.
+- QSO values are no longer URL-decoded or HTML-unescaped. Both corrupted real
+  data: `unquote_plus` turned a comment of `A+B 50%20C` into `A B 50 C`, and
+  unescaping mutated operator text that legitimately contained `&amp;`.
+- `_parse_adif_records` no longer stalls or rewinds when a declared field
+  length overruns the buffer, and a literal `<eor>` inside a comment no longer
+  truncates the record or inflates `record_count`.
+- Multibyte values are handled correctly: QRZ declares lengths in characters,
+  not UTF-8 bytes.
+
+### Changed
+- Mock fixtures are transcribed from live QRZ responses (escaped markers,
+  verbatim values, `ADIF` as the final key) and decode through the same
+  `_parse_kv` path as live traffic, so this class of regression fails the
+  suite instead of passing silently.
+- Added regression tests QRZ-L2-034/035 and QRZ-L2-049 through QRZ-L2-058,
+  covering bare `&`, `+`/`%`, entity-like text, embedded markers, multibyte
+  lengths, and `.adi` round-tripping.
+
+All behaviour above was confirmed against a live logbook by inserting QSOs
+with adversarial comments, reading them back, and deleting them afterwards.
+
+### Fixed
+- `qrz_logbook_status` silently returned `0`/`""` for `dxcc`, `start_date` and
+  `end_date` ([#5](https://github.com/qso-graph/qrz-mcp/issues/5)). QRZ's
+  STATUS response uses `DXCC_COUNT`, `START_DATE` and `END_DATE`, but the
+  client read `DXCC`, `START` and `END`. Missing keys defaulted to `0`/`""`,
+  so the failure was invisible while `count`, `confirmed` and `callsign`
+  continued to work. Each field is now resolved from a list of accepted
+  spellings, so both the current and legacy names parse.
+
+### Changed
+- `_MOCK_STATUS_BODY` is transcribed from a live STATUS response (real key
+  names, ISO dates, `BOOKID`/`BOOK_NAME`/`CALLSIGN`). The previous fixture
+  encoded the names the code expected rather than the ones QRZ sends, which is
+  why the suite passed while every live call returned zeros.
+- Added regression tests QRZ-L2-038 and QRZ-L2-049 through QRZ-L2-054.
+
+### Known limitation
+- `us_states` still reports `0`. No US-states key appears in any observed
+  STATUS response, and with only a non-US logbook available it is impossible
+  to tell whether QRZ renames the field or omits it when the value is zero.
+  Both plausible spellings (`US_STATES_COUNT`, `US_STATES`) are accepted so
+  the value populates automatically if present. Confirming this needs a
+  logbook with US states worked.
+
 ## [0.3.4] — 2026-09-28
 
 ### Added (CI hygiene)

@@ -197,7 +197,7 @@ class TestQrzDownload:
     def test_record_count(self):
         """QRZ-L2-031: Download reports correct record count."""
         result = qrz_download(persona="test")
-        assert result["record_count"] == 2
+        assert result["record_count"] == 3
 
     def test_has_adif_header(self):
         """QRZ-L2-032: ADIF output includes header."""
@@ -211,6 +211,34 @@ class TestQrzDownload:
         result = qrz_download(persona="test")
         assert "KI7MT" in result["adif"]
         assert "W1AW" in result["adif"]
+
+    def test_output_is_importable_adif(self):
+        """QRZ-L2-034: output is a real .adi file, not QRZ's escaped payload.
+
+        QRZ sends "&lt;call:5&gt;"; emitting that verbatim would produce a file
+        no logger can import. Checks escaped *markers* specifically — escaped
+        text inside a comment value is legitimate operator data and must stay.
+        """
+        import re
+
+        adif = qrz_download(persona="test")["adif"]
+
+        assert not re.search(r"&lt;\w+:\d+(?::\w+)?&gt;", adif), "escaped markers in output"
+        assert not re.search(r"&lt;eor&gt;", adif, re.IGNORECASE)
+        assert adif.upper().count("<EOR>") == 3
+
+    def test_roundtrip_preserves_values(self):
+        """QRZ-L2-035: re-serialised ADIF parses back to the same values."""
+        from qrz_mcp.logbook_client import _parse_adif_records
+
+        adif = qrz_download(persona="test")["adif"]
+        records = _parse_adif_records(adif)
+
+        assert len(records) == 3
+        comments = {r.get("COMMENT") for r in records}
+        # Values containing "&", "+" and "%" survive the round trip intact.
+        assert "R&R net" in comments
+        assert "A+B 50%20C" in comments
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +260,111 @@ class TestQrzLogbookStatus:
         for field in ("count", "dxcc", "callsign"):
             assert field in result, f"Missing field: {field}"
 
+    def test_date_range_populated(self):
+        """QRZ-L2-038: date range is populated, not left empty.
+
+        Regression for #5: the client read START/END while QRZ sends
+        START_DATE/END_DATE, so both silently returned "".
+        """
+        result = qrz_logbook_status(persona="test")
+
+        assert result["start_date"] == "2018-01-01"
+        assert result["end_date"] == "2026-03-01"
+
+
+# ---------------------------------------------------------------------------
+# QRZ-L2-049..054: STATUS field-name handling (#5)
+# ---------------------------------------------------------------------------
+
+
+class TestStatusFieldNames:
+    """Regression tests for #5, pinned to the live STATUS wire format.
+
+    A real response (verbatim, key redacted):
+
+        END_DATE=2044-07-25&BOOK_NAME=PU2UMK Logbook&RESULT=OK&OWNER=PU2UMK
+        &DXCC_COUNT=1&BOOKID=406135&START_DATE=2024-09-03&ACTION=STATUS
+        &CONFIRMED=3&CALLSIGN=PU2UMK&COUNT=30
+
+    Note DXCC_COUNT / START_DATE / END_DATE, and that no US-states key is
+    present at all.
+    """
+
+    LIVE_BODY = (
+        "END_DATE=2044-07-25&BOOK_NAME=PU2UMK Logbook&RESULT=OK&OWNER=PU2UMK"
+        "&DXCC_COUNT=1&BOOKID=406135&START_DATE=2024-09-03&ACTION=STATUS"
+        "&CONFIRMED=3&CALLSIGN=PU2UMK&COUNT=30"
+    )
+
+    def _status_from(self, body, monkeypatch):
+        """Drive LogbookClient.status() from a canned response body."""
+        from qrz_mcp.logbook_client import LogbookClient, _parse_kv
+        from qrz_mcp.rate_limiter import RateLimiter
+
+        client = LogbookClient(RateLimiter(min_delay=0.0))
+        monkeypatch.setattr(client, "_post", lambda params: _parse_kv(body))
+        monkeypatch.setenv("QRZ_MCP_MOCK", "0")
+        return client.status()
+
+    def test_live_response_fully_parsed(self, monkeypatch):
+        """QRZ-L2-049: every field resolves against a real STATUS body."""
+        st = self._status_from(self.LIVE_BODY, monkeypatch)
+
+        assert st["callsign"] == "PU2UMK"
+        assert st["count"] == 30
+        assert st["confirmed"] == 3
+        assert st["dxcc"] == 1              # was 0: read DXCC, not DXCC_COUNT
+        assert st["start_date"] == "2024-09-03"  # was ""
+        assert st["end_date"] == "2044-07-25"    # was ""
+
+    def test_legacy_short_names_still_work(self, monkeypatch):
+        """QRZ-L2-050: the older DXCC/START/END spellings remain accepted."""
+        body = (
+            "RESULT=OK&COUNT=10&CONFIRMED=2&DXCC=5&US_STATES=7"
+            "&OWNER=W1AW&START=20180101&END=20260301"
+        )
+        st = self._status_from(body, monkeypatch)
+
+        assert st["dxcc"] == 5
+        assert st["us_states"] == 7
+        assert st["start_date"] == "20180101"
+        assert st["end_date"] == "20260301"
+
+    def test_missing_keys_degrade_to_defaults(self, monkeypatch):
+        """QRZ-L2-051: absent fields yield 0/"" rather than raising."""
+        st = self._status_from("RESULT=OK&COUNT=3", monkeypatch)
+
+        assert st["count"] == 3
+        assert st["dxcc"] == 0
+        assert st["us_states"] == 0
+        assert st["start_date"] == ""
+
+    def test_non_numeric_counter_does_not_raise(self, monkeypatch):
+        """QRZ-L2-052: a malformed counter falls back to 0."""
+        st = self._status_from("RESULT=OK&COUNT=abc&DXCC_COUNT=x", monkeypatch)
+
+        assert st["count"] == 0
+        assert st["dxcc"] == 0
+
+    def test_callsign_prefers_owner(self, monkeypatch):
+        """QRZ-L2-053: OWNER wins over CALLSIGN when the two differ."""
+        body = "RESULT=OK&COUNT=1&OWNER=W1AW&CALLSIGN=W1AW/P"
+        st = self._status_from(body, monkeypatch)
+
+        assert st["callsign"] == "W1AW"
+
+    def test_mock_uses_real_key_names(self):
+        """QRZ-L2-054: the fixture must mirror live traffic, not our wishes."""
+        from qrz_mcp.logbook_client import _MOCK_STATUS_BODY
+
+        assert "DXCC_COUNT=" in _MOCK_STATUS_BODY
+        assert "START_DATE=" in _MOCK_STATUS_BODY
+        assert "END_DATE=" in _MOCK_STATUS_BODY
+        # The old spellings must not reappear as standalone keys.
+        assert "&DXCC=" not in _MOCK_STATUS_BODY
+        assert "&START=" not in _MOCK_STATUS_BODY
+        assert "&END=" not in _MOCK_STATUS_BODY
+
 
 # ---------------------------------------------------------------------------
 # QRZ-L2-039..045: qrz_logbook_fetch
@@ -242,8 +375,8 @@ class TestQrzLogbookFetch:
     def test_returns_records(self):
         """QRZ-L2-039: Fetch returns mock QSO records."""
         result = qrz_logbook_fetch(persona="test")
-        assert result["total"] == 2
-        assert len(result["records"]) == 2
+        assert result["total"] == 3
+        assert len(result["records"]) == 3
 
     def test_record_fields(self):
         """QRZ-L2-040: Fetch records have expected fields."""
@@ -269,15 +402,168 @@ class TestQrzLogbookFetch:
             assert len(rec["qso_date"]) == 8
 
     def test_record_has_grid(self):
-        """QRZ-L2-043: Records include gridsquare."""
+        """QRZ-L2-043: Gridsquare is mapped through when QRZ supplies it.
+
+        Not every QSO carries a grid (QRZ omits unknown fields entirely), so
+        this asserts the mapping works rather than that the field is universal.
+        """
         result = qrz_logbook_fetch(persona="test")
-        for rec in result["records"]:
-            assert "gridsquare" in rec
+        with_grid = [r for r in result["records"] if "gridsquare" in r]
+
+        assert with_grid, "no record carried a gridsquare"
+        for rec in with_grid:
+            assert len(rec["gridsquare"]) >= 4
 
 
 # ---------------------------------------------------------------------------
 # QRZ-L2-044..048: get_version_info — fleet identity attestation
 # ---------------------------------------------------------------------------
+
+
+class TestEscapedAdifWireFormat:
+    """Regression tests for #3, pinned to QRZ's actual wire format.
+
+    Confirmed against a live logbook by inserting QSOs with adversarial
+    comments and reading them back:
+
+      * ADIF *markers* are escaped (`&lt;call:6&gt;`), but field *values* are
+        passed through verbatim — a bare `&` arrives as `&`, not `&amp;`.
+      * `+` and `%` are literal; the payload is not URL-encoded.
+      * Entity-looking user text (`&amp;`) is returned as typed and must not
+        be unescaped, or it silently mutates.
+      * Declared lengths are in characters, not UTF-8 bytes.
+
+    So values must be consumed by declared length, and never rewritten.
+    """
+
+    def test_kv_keeps_adif_payload_verbatim(self):
+        """QRZ-L2-049: the ADIF value survives the "&"-delimited body intact."""
+        from qrz_mcp.logbook_client import _parse_kv
+
+        body = "RESULT=OK&COUNT=1&LOGIDS=1234&ADIF=&lt;call:6&gt;PU2UMK&lt;eor&gt;"
+        kv = _parse_kv(body)
+
+        assert kv["RESULT"] == "OK"
+        assert kv["LOGIDS"] == "1234"
+        # Not shredded into "lt;call:6" fragments, and not rewritten either.
+        assert kv["ADIF"] == "&lt;call:6&gt;PU2UMK&lt;eor&gt;"
+
+    def test_parses_escaped_records(self):
+        """QRZ-L2-050: escaped markers yield records, not silence."""
+        from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
+
+        body = (
+            "RESULT=OK&COUNT=1&ADIF="
+            "&lt;call:6&gt;PU2UMK&lt;mode:2&gt;FM&lt;band:3&gt;20M"
+            "&lt;qso_date:8&gt;20260301&lt;time_on:4&gt;1500&lt;eor&gt;"
+        )
+        records = _parse_adif_records(_parse_kv(body)["ADIF"])
+
+        assert len(records) == 1
+        assert records[0]["CALL"] == "PU2UMK"
+        assert records[0]["MODE"] == "FM"
+
+    def test_bare_ampersand_in_value(self):
+        """QRZ-L2-051: a bare "&" in a comment is data, not a delimiter.
+
+        Live wire form: `&lt;comment:7&gt;R&R net`.
+        """
+        from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
+
+        body = (
+            "RESULT=OK&ADIF="
+            "&lt;call:4&gt;W1AW&lt;comment:7&gt;R&R net&lt;eor&gt;"
+            "&lt;call:5&gt;KI7MT&lt;eor&gt;"
+        )
+        records = _parse_adif_records(_parse_kv(body)["ADIF"])
+
+        assert len(records) == 2
+        assert records[0]["COMMENT"] == "R&R net"
+        assert records[1]["CALL"] == "KI7MT"
+
+    def test_entity_like_text_not_unescaped(self):
+        """QRZ-L2-052: user text that looks like an entity must not decode.
+
+        Live wire form: `&lt;comment:23&gt;&amp; &lt; &gt; literal`, where the
+        value is exactly the 23 characters the operator typed.
+        """
+        from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
+
+        body = (
+            "RESULT=OK&ADIF="
+            "&lt;call:6&gt;PU2ORH&lt;comment:23&gt;&amp; &lt; &gt; literal&lt;eor&gt;"
+        )
+        records = _parse_adif_records(_parse_kv(body)["ADIF"])
+
+        assert len(records) == 1
+        assert records[0]["COMMENT"] == "&amp; &lt; &gt; literal"
+
+    def test_plus_and_percent_are_literal(self):
+        """QRZ-L2-053: payload is not URL-encoded; "+"/"%" survive as typed."""
+        from qrz_mcp.logbook_client import _parse_adif_records, _parse_kv
+
+        body = "RESULT=OK&ADIF=&lt;call:4&gt;W1AW&lt;comment:10&gt;A+B 50%20C&lt;eor&gt;"
+        records = _parse_adif_records(_parse_kv(body)["ADIF"])
+
+        # unquote_plus would corrupt this to "A B 50 C".
+        assert records[0]["COMMENT"] == "A+B 50%20C"
+
+    def test_markers_inside_value_are_not_structure(self):
+        """QRZ-L2-054: "<eor>" typed into a comment must not end the record."""
+        from qrz_mcp.logbook_client import _count_records, _parse_adif_records
+
+        adif = (
+            "&lt;call:4&gt;W1AW&lt;comment:16&gt;see <eor> marker&lt;eor&gt;"
+            "&lt;call:6&gt;PU2ORH&lt;eor&gt;"
+        )
+        records = _parse_adif_records(adif)
+
+        assert len(records) == 2
+        assert records[0]["COMMENT"] == "see <eor> marker"
+        # A naive substring count would report 3 records here.
+        assert _count_records(adif) == 2
+
+    def test_multibyte_length_is_characters(self):
+        """QRZ-L2-055: declared lengths count characters, not UTF-8 bytes."""
+        from qrz_mcp.logbook_client import _parse_adif_records
+
+        # "Açaí ñ Münch" is 12 characters but 16 UTF-8 bytes; QRZ declares 12.
+        records = _parse_adif_records(
+            "&lt;call:4&gt;W1AW&lt;comment:12&gt;Açaí ñ Münch&lt;eor&gt;"
+        )
+
+        assert records[0]["COMMENT"] == "Açaí ñ Münch"
+
+    def test_unescaped_adif_still_parses(self):
+        """QRZ-L2-056: literal-marker ADIF keeps working (files, other tools)."""
+        from qrz_mcp.logbook_client import _parse_adif_records
+
+        records = _parse_adif_records("<CALL:4>W1AW<BAND:3>20M<EOR>")
+
+        assert len(records) == 1
+        assert records[0]["CALL"] == "W1AW"
+
+    def test_overlong_length_terminates(self):
+        """QRZ-L2-057: a length overrunning the buffer must not hang."""
+        from qrz_mcp.logbook_client import _parse_adif_records
+
+        # Declared length (99) far exceeds the remaining text.
+        records = _parse_adif_records("<CALL:99>W1AW")
+
+        assert records == [{"CALL": "W1AW"}]
+
+    def test_mock_matches_real_wire_format(self):
+        """QRZ-L2-058: the fixture must mirror live traffic, not our wishes."""
+        from qrz_mcp.logbook_client import _MOCK_FETCH_BODY
+
+        # Markers escaped...
+        assert "&lt;" in _MOCK_FETCH_BODY and "&gt;" in _MOCK_FETCH_BODY
+        assert "<EOR>" not in _MOCK_FETCH_BODY
+        # ...values verbatim, including the cases confirmed live.
+        assert "R&R net" in _MOCK_FETCH_BODY
+        assert "A+B 50%20C" in _MOCK_FETCH_BODY
+        # ADIF is the final key.
+        assert _MOCK_FETCH_BODY.index("ADIF=") > _MOCK_FETCH_BODY.index("LOGIDS=")
 
 
 class TestGetVersionInfo:
