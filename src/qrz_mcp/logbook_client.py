@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import os
 import re
 import urllib.parse
@@ -41,11 +42,21 @@ def _is_mock() -> bool:
 
 
 def _iso_date(d: str) -> str:
-    """Normalise YYYYMMDD or YYYY-MM-DD to YYYY-MM-DD (QRZ's BETWEEN format)."""
+    """Normalise YYYYMMDD or YYYY-MM-DD to YYYY-MM-DD (QRZ's BETWEEN format).
+
+    Anything else is refused: the date goes into QRZ's comma-separated OPTION
+    string, so an unchecked value could add options of its own.
+    """
     d = d.strip()
-    if re.fullmatch(r"\d{8}", d):
-        return f"{d[:4]}-{d[4:6]}-{d[6:]}"
-    return d
+    m = re.fullmatch(r"(\d{4})-?(\d{2})-?(\d{2})", d)
+    if not m:
+        raise ValueError(f"Invalid date {d!r}: use YYYY-MM-DD or YYYYMMDD")
+    iso = "-".join(m.groups())
+    try:
+        datetime.date.fromisoformat(iso)
+    except ValueError:
+        raise ValueError(f"Invalid date {d!r}: not a real calendar date") from None
+    return iso
 
 
 def _qso_sort_key(qso: QsoRecord) -> tuple[str, str]:
