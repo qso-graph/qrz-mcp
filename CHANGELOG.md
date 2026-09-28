@@ -5,27 +5,39 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.4] — 2026-09-28
-
-### Added (CI hygiene)
-
-- **MCP Registry sync** — `publish.yml` publishes to the [Official MCP Registry](https://registry.modelcontextprotocol.io)
-  after each PyPI publish, using GitHub OIDC for auth. Triggered on
-  `v*` tag push; no manual steps. The Registry job waits until PyPI
-  serves the version, and retries. Pattern documented in
-  [qso-graph/.github/TEMPLATES.md](https://github.com/qso-graph/.github/blob/main/TEMPLATES.md).
-- **Registry version badge** in README — PyPI and Registry versions
-  are visible side-by-side so any drift between publishing surfaces
-  is immediately apparent.
-- **Release gates** — the tag must match `pyproject.toml`, and a
-  `verify` job fails the release unless PyPI and the MCP Registry
-  both serve the new version.
+## [Unreleased]
 
 ### Fixed
+- `qrz_logbook_fetch` and `qrz_download` returned 0 records for non-empty
+  logbooks ([#3](https://github.com/qso-graph/qrz-mcp/issues/3)). QRZ escapes
+  the ADIF *markers* (`&lt;call:6&gt;`) but passes field *values* through
+  verbatim, so the payload contains raw `&` characters. Splitting the response
+  body on every `&` shredded it, leaving `ADIF` empty before parsing began.
+  `ADIF` is now read as the whole remainder of the body, and values are
+  consumed by their declared length instead of by delimiter scanning.
+- `qrz_download` emitted QRZ's escaped markers into the `.adi` output, so the
+  "raw ADIF" could not be imported by any logger. Records are now
+  re-serialised with literal markers.
+- QSO values are no longer URL-decoded or HTML-unescaped. Both corrupted real
+  data: `unquote_plus` turned a comment of `A+B 50%20C` into `A B 50 C`, and
+  unescaping mutated operator text that legitimately contained `&amp;`.
+- `_parse_adif_records` no longer stalls or rewinds when a declared field
+  length overruns the buffer, and a literal `<eor>` inside a comment no longer
+  truncates the record or inflates `record_count`.
+- Multibyte values are handled correctly: QRZ declares lengths in characters,
+  not UTF-8 bytes.
 
-- The Official MCP Registry listed qrz-mcp at 0.2.0. This release brings it current.
+### Changed
+- Mock fixtures are transcribed from live QRZ responses (escaped markers,
+  verbatim values, `ADIF` as the final key) and decode through the same
+  `_parse_kv` path as live traffic, so this class of regression fails the
+  suite instead of passing silently.
+- Added regression tests QRZ-L2-034/035 and QRZ-L2-049 through QRZ-L2-058,
+  covering bare `&`, `+`/`%`, entity-like text, embedded markers, multibyte
+  lengths, and `.adi` round-tripping.
 
-## [Unreleased]
+All behaviour above was confirmed against a live logbook by inserting QSOs
+with adversarial comments, reading them back, and deleting them afterwards.
 
 ### Fixed
 - `qrz_logbook_status` silently returned `0`/`""` for `dxcc`, `start_date` and
@@ -50,6 +62,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Both plausible spellings (`US_STATES_COUNT`, `US_STATES`) are accepted so
   the value populates automatically if present. Confirming this needs a
   logbook with US states worked.
+
+## [0.3.4] — 2026-09-28
+
+### Added (CI hygiene)
+
+- **MCP Registry sync** — `publish.yml` publishes to the [Official MCP Registry](https://registry.modelcontextprotocol.io)
+  after each PyPI publish, using GitHub OIDC for auth. Triggered on
+  `v*` tag push; no manual steps. The Registry job waits until PyPI
+  serves the version, and retries. Pattern documented in
+  [qso-graph/.github/TEMPLATES.md](https://github.com/qso-graph/.github/blob/main/TEMPLATES.md).
+- **Registry version badge** in README — PyPI and Registry versions
+  are visible side-by-side so any drift between publishing surfaces
+  is immediately apparent.
+- **Release gates** — the tag must match `pyproject.toml`, and a
+  `verify` job fails the release unless PyPI and the MCP Registry
+  both serve the new version.
+
+### Fixed
+
+- The Official MCP Registry listed qrz-mcp at 0.2.0. This release brings it current.
 
 ## [0.3.3] — 2026-05-16
 
