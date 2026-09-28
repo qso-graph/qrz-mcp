@@ -5,7 +5,28 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.5] — 2026-09-28
+
+Thanks to three contributors: **[@MicaelJarniac](https://github.com/MicaelJarniac)** (#2, #3, #5 and
+PRs #4, #6, #7) and **[@ssamjung2](https://github.com/ssamjung2)** (#9, #10), who found these on
+live logbooks and sent the fixes.
+
+### Security
+
+- **The logbook API key could be sent as the password** (#10, reported and fixed by @ssamjung2).
+  With both a password and an API key stored, the password was sent to QRZ as the logbook
+  key. Fixed in qso-graph-auth 0.1.2, now required, and qrz-mcp asks for the API key
+  explicitly.
+- **Dates are validated strictly.** User-supplied dates go into QRZ's comma-separated `OPTION`
+  string, and anything that wasn't `YYYYMMDD` passed through unchecked, so a date could add
+  options of its own. Only real `YYYY-MM-DD` or `YYYYMMDD` dates are accepted now.
+
+### Fixed
+
+- **Date filters, paging and newest QSOs** (#9, by @ssamjung2): dates use QRZ's documented
+  `BETWEEN:start+end` (every dated fetch used to fail with "unknown"); paging uses
+  `MAX:250,AFTERLOGID:n` inside `OPTION`, so large logbooks page correctly; opt-in
+  `newest_first` on fetch.
 
 ### Fixed
 - `qrz_logbook_fetch` and `qrz_download` returned 0 records for non-empty

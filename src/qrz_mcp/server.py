@@ -52,7 +52,8 @@ def _logbook(persona: str) -> LogbookClient:
     if persona not in _logbook_clients:
         client = LogbookClient(_rate_limiter)
         if not _is_mock():
-            username, api_key = _pm().require(persona, "qrz_logbook")
+            # The logbook authenticates with an API key; never send a stored password (#10).
+            username, api_key = _pm().require(persona, "qrz_logbook", prefer="api_key")
             client.configure(api_key, callsign=username)
         _logbook_clients[persona] = client
     return _logbook_clients[persona]
