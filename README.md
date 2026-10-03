@@ -12,7 +12,6 @@ Part of the [qso-graph](https://qso-graph.io/) project. Uses [qso-graph-auth](ht
 
 ```bash
 uvx qrz-mcp            # run it; nothing to install
-pip install qrz-mcp    # or install it into your own environment
 ```
 
 ## Tools
@@ -157,8 +156,6 @@ Add to `~/.gemini/settings.json` (global) or `.gemini/settings.json` (project):
   }
 }
 ```
-
-Installed with pip instead? Use `"command": "qrz-mcp"` in any config above.
 
 ### 3. Ask questions
 
