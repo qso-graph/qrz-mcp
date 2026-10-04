@@ -5,6 +5,14 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] — 2026-10-04
+
+Documentation only; no code changes. Released so the PyPI page shows the corrected README.
+
+### Changed
+- README: `creds set` prompts for the password and API key instead of taking them on the command line, where they land in shell history (#16).
+- README: uvx only, no pip (#15).
+
 ## [0.3.5] — 2026-09-28
 
 Thanks to three contributors: **[@MicaelJarniac](https://github.com/MicaelJarniac)** (#2, #3, #5 and
