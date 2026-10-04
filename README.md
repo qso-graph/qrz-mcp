@@ -45,11 +45,11 @@ qso-auth persona add --name ki7mt --callsign KI7MT --start 2018-01-01
 
 # XML API (qrz_lookup, qrz_dxcc)
 qso-auth provider enable ki7mt qrz
-qso-auth creds set ki7mt qrz --username KI7MT --password YOUR_PASSWORD
+qso-auth creds set ki7mt qrz              # asks for your username, then your password (hidden)
 
 # Logbook API (qrz_logbook_status, qrz_logbook_fetch, qrz_download)
 qso-auth provider enable ki7mt qrz_logbook
-qso-auth creds set ki7mt qrz_logbook --username KI7MT --api-key YOUR_API_KEY
+qso-auth creds set ki7mt qrz_logbook      # asks for your username, then your API key
 
 # Verify
 qso-auth creds doctor
