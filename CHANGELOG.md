@@ -5,7 +5,7 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.7] — 2026-10-06
 
 - PyPI: the Documentation link goes to this package's own page, https://qso-graph.io/servers/qrz/ (qso-graph/.github#15).
 - CI: the release flow (qso-graph/.github TEMPLATES.md). Work lands on `develop`; a release is a
