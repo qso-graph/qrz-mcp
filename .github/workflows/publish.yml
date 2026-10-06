@@ -68,7 +68,9 @@ jobs:
         run: python -m pytest tests/test_security.py -v
 
       - name: Audit dependencies for vulnerabilities
-        run: pip-audit --strict --desc 2>&1 || true
+        # Audits this package's declared dependencies, and can fail: a known CVE stops the release.
+        # A finding with no fix yet is excepted only explicitly: --ignore-vuln ID, with a reason and date.
+        run: pip-audit --strict --desc on .
 
       - name: Grep check — no subprocess/shell
         run: |
