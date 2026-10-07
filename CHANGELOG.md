@@ -5,6 +5,10 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- LICENSE: the full GPL-3.0 text. The file held only its opening and a link, so GitHub detected no licence.
+
 ## [0.3.7] — 2026-10-06
 
 - PyPI: the Documentation link goes to this package's own page, https://qso-graph.io/servers/qrz/ (qso-graph/.github#15).
