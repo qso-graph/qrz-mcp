@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   widths, not defects, and some lines are long because they name a publisher's field exactly.
 - `mcp.run` is given the literal fastmcp asks for rather than a `str` that happens to hold the
   right word.
+- **`fastmcp` is bounded: `>=4.0,<5`** (qso-graph-devel#60). It was `>=3.0` with no upper bound, and
+  these servers are run with `uvx`, which resolves fresh — so a `fastmcp` 5.0 would have reached
+  every user automatically, before anything here had been run against it. The floor rises to 4.0
+  because that is what is actually tested: every lock in the fleet held a 4.x, and nothing in CI
+  has ever exercised 3.x. A claim of 3.x support that no test backs is not support.
+- `fastmcp` is locked at 4.1.0, the current release, so CI runs against what a new install gets.
 
 ## [0.3.8] — 2026-10-07
 
