@@ -5,6 +5,19 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- **ruff and mypy run in CI** (qso-graph-devel#66), as a job the `ci-all-green` gate requires.
+  Settings follow `adif-mcp`, the reference for every qso-graph Python repo, rather than a style of
+  this repo's own. They run once rather than per Python version: both read the source, and neither
+  answer changes with the interpreter.
+- Each cache read is annotated with the record type its caller expects, two `type: ignore`
+  comments that covered nothing were removed, and an unused `pytest` import left the tests.
+- `E501` is deferred rather than adopted (qso-graph-devel#70): what it reports in these repos are
+  widths, not defects, and some lines are long because they name a publisher's field exactly.
+- `mcp.run` is given the literal fastmcp asks for rather than a `str` that happens to hold the
+  right word.
+
 ## [0.3.8] — 2026-10-07
 
 - LICENSE: the full GPL-3.0 text. The file held only its opening and a link, so GitHub detected no licence.
