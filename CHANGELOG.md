@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because that is what is actually tested: every lock in the fleet held a 4.x, and nothing in CI
   has ever exercised 3.x. A claim of 3.x support that no test backs is not support.
 - `fastmcp` is locked at 4.1.0, the current release, so CI runs against what a new install gets.
+- **The published contact is `maintainers@qso-graph.io`** (qso-graph-devel#69). The `authors` field
+  carried a personal address, and that field is what PyPI shows on the package page. Everything in
+  qso-graph is open source and open to contribution, so the contact is the project's.
 
 ## [0.3.8] — 2026-10-07
 
