@@ -27,6 +27,28 @@ jobs:
             *) echo "main takes a release PR from develop, or a security/ branch"; exit 1 ;;
           esac
 
+  # Lint and types, once rather than per Python: both read the source, and
+  # neither answer changes with the interpreter running them (qso-graph-devel#66).
+  lint:
+    name: ruff and mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install (locked)
+        run: uv sync --group dev --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type-check (mypy)
+        run: uv run mypy src
+
   test:
     name: pytest (${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -53,12 +75,16 @@ jobs:
 
   ci-all-green:
     name: ci-all-green
-    needs: [test]
+    needs: [lint, test]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Verify required jobs all succeeded
         run: |
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "FAIL: ruff or mypy did not pass (result=${{ needs.lint.result }})"
+            exit 1
+          fi
           if [[ "${{ needs.test.result }}" != "success" ]]; then
             echo "FAIL: test matrix did not all succeed (result=${{ needs.test.result }})"
             exit 1

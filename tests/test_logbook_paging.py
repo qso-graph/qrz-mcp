@@ -20,13 +20,13 @@ Test IDs: QRZ-L2-060 through QRZ-L2-072
 
 from __future__ import annotations
 
-import pytest
-
 import io
 import os
 import urllib.parse
 from contextlib import contextmanager
 from unittest import mock
+
+import pytest
 
 from qrz_mcp.logbook_client import LogbookClient
 from qrz_mcp.rate_limiter import RateLimiter

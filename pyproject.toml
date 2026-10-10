@@ -38,7 +38,7 @@ qrz-mcp = "qrz_mcp.server:main"
 
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6.8", "mypy>=1.11"]
 
 [build-system]
 requires = ["hatchling"]
@@ -46,3 +46,40 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/qrz_mcp"]
+
+# Lint and type settings follow adif-mcp, the reference for every qso-graph
+# Python repo (qso-graph-devel#66). Copied rather than invented so the repos do
+# not each grow a style of their own.
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests"]
+line-length = 95
+extend-exclude = [".venv", "dist", "build", ".eggs", ".pytest_cache", "site"]
+
+[tool.ruff.lint]
+# F and I are the rules that find defects: an unused import, an undefined name,
+# an import block out of order. They run here from the start.
+#
+# E501 is a width, and it is adif-mcp's width — these repos were not written to
+# it. On cq-zones-mcp it reported 39 lines and not one of them was a defect, so
+# it is deferred to a pass of its own rather than reflowing several hundred
+# lines of prose across sixteen repos (qso-graph-devel#70).
+#
+# Six of those 39 will not be reflowed at all, whenever that pass happens.
+# They are long because they name a publisher's field exactly —
+# `pas["Adif"]["Enumerations"]["Primary_Administrative_Subdivision"]["Records"]`
+# — and this project's rule is that the owner of a list is its authority, so we
+# use ADIF's names and not shorter ones of our own. There the length is the
+# correctness.
+select = ["E", "F", "I"]
+ignore = ["E501"]
+fixable = ["I"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+no_implicit_optional = true
+ignore_missing_imports = true

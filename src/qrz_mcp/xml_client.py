@@ -196,7 +196,7 @@ class XmlClient:
     def lookup(self, callsign: str) -> CallsignRecord:
         """Look up a callsign. Returns structured record."""
         key = f"call:{callsign.upper()}"
-        cached = self._cache.get(key)
+        cached: CallsignRecord | None = self._cache.get(key)
         if cached is not None:
             return cached
 
@@ -210,7 +210,7 @@ class XmlClient:
             return CallsignRecord(call=callsign.upper())
 
         def _text(tag: str) -> str:
-            return _findtext(node, tag).strip()  # type: ignore[arg-type]
+            return _findtext(node, tag).strip()
 
         def _float(tag: str) -> float | None:
             v = _text(tag)
@@ -260,7 +260,7 @@ class XmlClient:
         """Resolve DXCC entity from callsign or numeric code."""
         query = str(query)
         key = f"dxcc:{query.upper()}"
-        cached = self._cache.get(key)
+        cached: DxccRecord | None = self._cache.get(key)
         if cached is not None:
             return cached
 
@@ -274,7 +274,7 @@ class XmlClient:
             return DxccRecord(name=f"Not found: {query}")
 
         def _text(tag: str) -> str:
-            return _findtext(node, tag).strip()  # type: ignore[arg-type]
+            return _findtext(node, tag).strip()
 
         def _float(tag: str) -> float | None:
             v = _text(tag)
