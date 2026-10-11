@@ -7,7 +7,6 @@ import sys
 from typing import Any
 
 from fastmcp import FastMCP
-
 from qso_graph_auth.identity import PersonaManager
 
 from . import __spec_version__, __version__
@@ -240,8 +239,10 @@ def main() -> None:
         if arg == "--port" and i < len(sys.argv) - 1:
             port = int(sys.argv[i + 1])
 
+    # Written out rather than passed through: fastmcp takes a literal, and a
+    # str that happens to hold the right word is not the same thing.
     if transport == "streamable-http":
-        mcp.run(transport=transport, port=port)
+        mcp.run(transport="streamable-http", port=port)
     else:
         mcp.run(transport="stdio")
 

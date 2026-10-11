@@ -11,20 +11,17 @@ from __future__ import annotations
 import os
 import time
 
-import pytest
-
 os.environ["QRZ_MCP_MOCK"] = "1"
 
 from qrz_mcp.cache import TTLCache
 from qrz_mcp.rate_limiter import RateLimiter
 from qrz_mcp.server import (
-    qrz_dxcc,
     qrz_download,
+    qrz_dxcc,
     qrz_logbook_fetch,
     qrz_logbook_status,
     qrz_lookup,
 )
-
 
 # ---------------------------------------------------------------------------
 # QRZ-L2-001..010: TTLCache
