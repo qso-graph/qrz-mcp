@@ -451,7 +451,9 @@ class LogbookClient:
         if limit <= 0:
             return []
 
-        options = self._build_options(band, mode, callsign, dxcc, start_date, end_date, confirmed_only)
+        options = self._build_options(
+            band, mode, callsign, dxcc, start_date, end_date, confirmed_only,
+        )
 
         all_qsos: list[QsoRecord] = []
         if newest_first:
@@ -488,7 +490,9 @@ class LogbookClient:
             adif_text = _ADIF_HEADER + _records_to_adif(records)
             return {"adif": adif_text, "record_count": len(records)}
 
-        options = self._build_options(band=band, mode=mode, start_date=start_date, end_date=end_date)
+        options = self._build_options(
+            band=band, mode=mode, start_date=start_date, end_date=end_date,
+        )
 
         all_records: list[dict[str, str]] = []
         for records in self._iter_pages(options):

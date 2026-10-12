@@ -61,19 +61,18 @@ extend-exclude = [".venv", "dist", "build", ".eggs", ".pytest_cache", "site"]
 # F and I are the rules that find defects: an unused import, an undefined name,
 # an import block out of order. They run here from the start.
 #
-# E501 is a width, and it is adif-mcp's width — these repos were not written to
-# it. On cq-zones-mcp it reported 39 lines and not one of them was a defect, so
-# it is deferred to a pass of its own rather than reflowing several hundred
-# lines of prose across sixteen repos (qso-graph-devel#70).
+# E501 is a width, and it was deferred here while the rules that find defects
+# went in first (qso-graph-devel#70). That pass has now happened for this repo
+# (#32): it reported five lines, none of them a defect, and all five reflowed.
 #
-# Six of those 39 will not be reflowed at all, whenever that pass happens.
-# They are long because they name a publisher's field exactly —
-# `pas["Adif"]["Enumerations"]["Primary_Administrative_Subdivision"]["Records"]`
-# — and this project's rule is that the owner of a list is its authority, so we
-# use ADIF's names and not shorter ones of our own. There the length is the
-# correctness.
+# No line here needed an exemption. Where one does — a line long because it
+# names a publisher's field exactly, or reproduces a publisher's wire format
+# where the shape is the point — the length is the correctness, this project's
+# rule being that the owner of a list is its authority. It would then carry a
+# `# noqa: E501` with the reason beside it, or live in a file of its own as
+# lotw-mcp's ADIF samples do. This repo has no such line.
 select = ["E", "F", "I"]
-ignore = ["E501"]
+ignore = []
 fixable = ["I"]
 
 [tool.mypy]
