@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from qso_graph_auth.identity import PersonaManager
 
 from . import __spec_version__, __version__
@@ -62,6 +63,32 @@ def _logbook(persona: str) -> LogbookClient:
 # Tools
 # ---------------------------------------------------------------------------
 
+# MCP 2026-07-28 tool annotations. The defaults are pessimistic — a tool that
+# declares nothing is advertised as destructive, non-idempotent and open-world,
+# and the specification tells a client to keep a human in the loop for an
+# operation like that. Every tool here reads: nothing is uploaded to QRZ, and
+# no credential is written — the keyring is read only.
+#
+# openWorldHint is true for the five that reach qrz.com and false for
+# get_version_info. They are a client's UX hint and never a security control,
+# so nothing here says which tools send the password and which send the API
+# key — the distinction above (#10) is enforced in code, not advertised in
+# metadata the specification requires clients to distrust.
+_READS_QRZ = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True,
+}
+_ANSWERS_FROM_THE_PACKAGE = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
+
+
 
 def _version_info_payload() -> dict[str, Any]:
     """Build the version info envelope. Pulled into a helper so tests can
@@ -73,7 +100,7 @@ def _version_info_payload() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANSWERS_FROM_THE_PACKAGE)
 def get_version_info() -> dict[str, Any]:
     """Get qrz-mcp service version and upstream QRZ API version.
 
@@ -89,7 +116,7 @@ def get_version_info() -> dict[str, Any]:
     return _version_info_payload()
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READS_QRZ)
 def qrz_lookup(persona: str, callsign: str) -> dict[str, Any]:
     """Look up a callsign on QRZ.com (name, grid, DXCC, license class, QSL info, image).
 
@@ -105,10 +132,10 @@ def qrz_lookup(persona: str, callsign: str) -> dict[str, Any]:
     try:
         return dict(_xml(persona).lookup(callsign))
     except Exception as e:
-        return {"error": str(e)}
+        raise ToolError(str(e)) from e
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READS_QRZ)
 def qrz_dxcc(persona: str, query: str) -> dict[str, Any]:
     """Resolve a DXCC entity from a callsign or numeric entity code.
 
@@ -122,10 +149,10 @@ def qrz_dxcc(persona: str, query: str) -> dict[str, Any]:
     try:
         return dict(_xml(persona).dxcc(query))
     except Exception as e:
-        return {"error": str(e)}
+        raise ToolError(str(e)) from e
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READS_QRZ)
 def qrz_logbook_status(persona: str) -> dict[str, Any]:
     """Get QRZ logbook statistics (QSO count, DXCC total, date range).
 
@@ -138,10 +165,10 @@ def qrz_logbook_status(persona: str) -> dict[str, Any]:
     try:
         return dict(_logbook(persona).status())
     except Exception as e:
-        return {"error": str(e)}
+        raise ToolError(str(e)) from e
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READS_QRZ)
 def qrz_download(
     persona: str,
     band: str | None = None,
@@ -169,10 +196,10 @@ def qrz_download(
             band=band, mode=mode, start_date=start_date, end_date=end_date,
         )
     except Exception as e:
-        return {"error": str(e)}
+        raise ToolError(str(e)) from e
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READS_QRZ)
 def qrz_logbook_fetch(
     persona: str,
     band: str | None = None,
@@ -221,7 +248,7 @@ def qrz_logbook_fetch(
         )
         return {"total": len(qsos), "records": [dict(q) for q in qsos]}
     except Exception as e:
-        return {"error": str(e)}
+        raise ToolError(str(e)) from e
 
 
 # ---------------------------------------------------------------------------

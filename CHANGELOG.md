@@ -5,6 +5,26 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- **Tool execution errors are flagged `isError`** (#33). Every tool returned `{"error": "..."}` on
+  failure, which reaches a client as a *successful* call whose payload happens to contain the word
+  "error". They now raise `ToolError`, which `fastmcp` reports as `isError: true` with the message
+  intact. **No decision changed — only how it is reported.**
+- **Every tool declares all four annotation hints** (#33). All six are read-only, non-destructive
+  and idempotent — nothing is uploaded to QRZ and no credential is written, only read.
+  `openWorldHint` is true for the five that reach qrz.com and false for `get_version_info`.
+- **#10 — the logbook's API key and the XML API's password stay separate — is now asserted.** That
+  decision lives in one keyword argument, `prefer="api_key"`, and nothing tested it. Two checks
+  now record which provider entry each path asks for, so sending the logbook the stored password
+  fails a test rather than passing review. Deliberately *not* advertised in the annotations: the
+  specification requires clients to treat those as untrusted, so a security-relevant claim does not
+  belong there.
+- **Neither secret can reach the client through an error**, asserted with a distinct sentinel for
+  each. Both clients already caught their exceptions and raised fixed messages — true before #33 —
+  but that message used to sit in a payload and is now the failure text a client reads.
+- **`tests/test_mcp_conformance.py`** asserts all of the above.
+
 ## [0.3.9] — 2026-10-11
 
 - **ruff and mypy run in CI** (qso-graph-devel#66), as a job the `ci-all-green` gate requires.
