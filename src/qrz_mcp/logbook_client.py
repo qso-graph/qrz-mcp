@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Iterator
 
-from . import __version__
+from . import __version__, _tls
 from .rate_limiter import RateLimiter
 from .types import LogbookStatus, QsoRecord
 
@@ -291,7 +291,7 @@ class LogbookClient:
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
 
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15, context=_tls.context()) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
         except ConnectionRefusedError:
             self._rate_limiter.freeze_ban()
