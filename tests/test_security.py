@@ -49,8 +49,22 @@ def test_no_subprocess():
 
 
 def test_all_urls_https():
-    """Guarantee #7: HTTPS only for external calls."""
-    http_url = re.compile(r'http://(?!localhost|127\.0\.0\.1|::1|xmldata\.qrz\.com)')
+    """Guarantee #7: HTTPS only for external calls.
+
+    The one legitimate `http://` here is QRZ's XML namespace identifier,
+    `_NS = "http://xmldata.qrz.com"`, which must match their schema byte for
+    byte or ElementTree lookups fail. It is nothing anyone connects to.
+
+    It is exempted as an *identifier* and not as a host. Exempting the host —
+    which this check did until #39 — also passes a real plaintext connection to
+    the same host, because `http://xmldata.qrz.com/xml/current/` starts with the
+    excluded string. Measured: with exactly that line in `xml_client.py`, this
+    test passed. The exemption therefore requires the host to be followed by a
+    quote or whitespace, which the namespace is and a URL path is not.
+    """
+    http_url = re.compile(
+        r"""http://(?!localhost|127\.0\.0\.1|::1|xmldata\.qrz\.com(?=["'\s]))"""
+    )
     for py_file in _py_files():
         content = py_file.read_text()
         matches = http_url.findall(content)
