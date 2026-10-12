@@ -281,12 +281,19 @@ class TestNewestFirst:
 class TestDateValidation:
     """User dates go into QRZ's comma-separated OPTION string: only real dates pass."""
 
-    @pytest.mark.parametrize("given,iso", [("20260501", "2026-05-01"), ("2026-05-01", "2026-05-01"), (" 20261231 ", "2026-12-31")])
+    @pytest.mark.parametrize("given,iso", [
+        ("20260501", "2026-05-01"),
+        ("2026-05-01", "2026-05-01"),
+        (" 20261231 ", "2026-12-31"),
+    ])
     def test_accepted(self, given, iso):
         from qrz_mcp.logbook_client import _iso_date
         assert _iso_date(given) == iso
 
-    @pytest.mark.parametrize("bad", ["2026-01-01,MAX:1", "2026-01-01+2027-01-01", "yesterday", "2026-13-01", "20260230", "", "2026/05/01"])
+    @pytest.mark.parametrize("bad", [
+        "2026-01-01,MAX:1", "2026-01-01+2027-01-01", "yesterday",
+        "2026-13-01", "20260230", "", "2026/05/01",
+    ])
     def test_refused(self, bad):
         from qrz_mcp.logbook_client import _iso_date
         with pytest.raises(ValueError, match="Invalid date"):

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **`E501` is adopted** (#32, qso-graph-devel#70). It was deliberately ignored while the rules that
+  find defects went in first; this is the pass of its own that deferral was waiting for. It reported
+  **five lines, none of them a defect**, and all five reflowed with no name shortened — **no
+  exemption was needed**, so this repo carries no `noqa` at all. Formatting and config only; the
+  suite is unchanged.
+
 - **`certifi` is carried, and both fetch paths verify against it** (#31, qso-graph-devel#73). They
   used `urllib` with no context, so they trusted whichever root store the running Python was built
   against. On macOS that is `/etc/ssl/cert.pem`, a deliberately *reduced* OpenSSL file — 128 roots
