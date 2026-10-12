@@ -5,6 +5,62 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-10-12
+
+**Upgrading:** a tool that fails now returns `isError: true` instead of a successful result whose
+payload contained an `error` key. Anything reading `result["error"]` should read the error flag.
+No decision changed.
+
+**Worth knowing:** this server holds two secrets for one persona — a password for the XML API and
+an API key for the logbook — and #10's rule that the logbook is never sent the password is now
+asserted by a test rather than resting on one keyword argument.
+
+
+- **`E501` is adopted** (#32, qso-graph-devel#70). It was deliberately ignored while the rules that
+  find defects went in first; this is the pass of its own that deferral was waiting for. It reported
+  **five lines, none of them a defect**, and all five reflowed with no name shortened — **no
+  exemption was needed**, so this repo carries no `noqa` at all. Formatting and config only; the
+  suite is unchanged.
+
+- **`certifi` is carried, and both fetch paths verify against it** (#31, qso-graph-devel#73). They
+  used `urllib` with no context, so they trusted whichever root store the running Python was built
+  against. On macOS that is `/etc/ssl/cert.pem`, a deliberately *reduced* OpenSSL file — 128 roots
+  against the system keychain's 158, and current rather than stale. **qrz.com verifies fine against
+  it today**, so this was latent rather than an outage.
+- **Both paths carry a secret, for different reasons.** The XML API puts the operator's password in
+  the query string; the logbook puts the API key in a POST body — and a body is no safer than the
+  connection under it. So `ssl.CERT_NONE` would hand over whichever secret that call was carrying,
+  which is why verification is never disabled rather than merely why it should not be.
+- The context lives in its own module, `_tls.py`, because the calls are in two files. The "every
+  `urlopen` verifies" check scans the whole package: a check reading one file would have missed the
+  other, which is how a server ends up verifying the password path and not the API-key path.
+- **The logbook test double now asserts the context it is handed.** Adding `context=` broke seven
+  paging tests, because `_FakeQrz.urlopen` did not accept the argument — the right kind of break. A
+  stub that quietly accepts anything is how a missing context goes unnoticed in every test that
+  uses it, so it now checks `CERT_REQUIRED` and `check_hostname` rather than merely tolerating the
+  keyword. Removing the context from `logbook_client.py` is then caught twice over, by the static
+  guard and by those seven tests.
+- **`tests/test_release_gate.py`** asserts the gate suite imports nothing but the standard library
+  and pytest. solar-mcp's 0.3.0 publish failed on exactly that, from the same change.
+
+- **Tool execution errors are flagged `isError`** (#33). Every tool returned `{"error": "..."}` on
+  failure, which reaches a client as a *successful* call whose payload happens to contain the word
+  "error". They now raise `ToolError`, which `fastmcp` reports as `isError: true` with the message
+  intact. **No decision changed — only how it is reported.**
+- **Every tool declares all four annotation hints** (#33). All six are read-only, non-destructive
+  and idempotent — nothing is uploaded to QRZ and no credential is written, only read.
+  `openWorldHint` is true for the five that reach qrz.com and false for `get_version_info`.
+- **#10 — the logbook's API key and the XML API's password stay separate — is now asserted.** That
+  decision lives in one keyword argument, `prefer="api_key"`, and nothing tested it. Two checks
+  now record which provider entry each path asks for, so sending the logbook the stored password
+  fails a test rather than passing review. Deliberately *not* advertised in the annotations: the
+  specification requires clients to treat those as untrusted, so a security-relevant claim does not
+  belong there.
+- **Neither secret can reach the client through an error**, asserted with a distinct sentinel for
+  each. Both clients already caught their exceptions and raised fixed messages — true before #33 —
+  but that message used to sit in a payload and is now the failure text a client reads.
+- **`tests/test_mcp_conformance.py`** asserts all of the above.
+
 ## [0.3.9] — 2026-10-11
 
 - **ruff and mypy run in CI** (qso-graph-devel#66), as a job the `ci-all-green` gate requires.

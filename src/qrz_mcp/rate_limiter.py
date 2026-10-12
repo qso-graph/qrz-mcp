@@ -30,7 +30,9 @@ class RateLimiter:
     def _refill(self) -> None:
         now = time.monotonic()
         elapsed = now - self._last_refill
-        self._tokens = min(self._max_tokens, self._tokens + elapsed * (self._max_tokens / 60.0))
+        self._tokens = min(
+            self._max_tokens, self._tokens + elapsed * (self._max_tokens / 60.0),
+        )
         self._last_refill = now
 
     def wait(self) -> None:

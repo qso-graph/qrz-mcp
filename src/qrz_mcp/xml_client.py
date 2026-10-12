@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
-from . import __version__
+from . import __version__, _tls
 from .cache import TTLCache
 from .rate_limiter import RateLimiter
 from .types import CallsignRecord, DxccRecord
@@ -118,7 +118,7 @@ class XmlClient:
         req = urllib.request.Request(url, method="GET")
         req.add_header("User-Agent", self._agent)
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15, context=_tls.context()) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
         except ConnectionRefusedError:
             self._rate_limiter.freeze_ban()
