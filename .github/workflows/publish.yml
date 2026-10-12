@@ -81,7 +81,16 @@ jobs:
 
       - name: Grep check — no plaintext http://
         run: |
-          if grep -rn 'http://' src/ | grep -v 'localhost\|127\.0\.0\.1\|::1\|xmldata\.qrz\.com'; then
+          # The one legitimate http:// in this package is QRZ's XML namespace
+          # identifier, which must match their schema byte for byte and which
+          # nothing connects to. It is exempted as that exact line, not by
+          # hostname: a hostname exclusion also passes a real plaintext
+          # connection to the same host, since
+          # "http://xmldata.qrz.com/xml/current/" starts with the excluded
+          # string. That hole was measured, not theorised (#39).
+          if grep -rn 'http://' src/ \
+              | grep -v 'localhost\|127\.0\.0\.1\|::1' \
+              | grep -vE '^src/qrz_mcp/xml_client\.py:[0-9]+:_NS = "http://xmldata\.qrz\.com"$'; then
             echo "FAIL: non-HTTPS URL found in source"
             exit 1
           fi
