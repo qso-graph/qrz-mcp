@@ -73,7 +73,17 @@ class _FakeQrz:
     def __init__(self) -> None:
         self.requests: list[dict[str, str]] = []
 
-    def urlopen(self, req, timeout=15):
+    def urlopen(self, req, timeout=15, context=None):
+        # The real call passes a verifying context (#31), and this double
+        # stands in for the real call. Asserted rather than merely tolerated:
+        # a stub that quietly accepts anything is how a missing context goes
+        # unnoticed in every test that uses it.
+        import ssl
+
+        assert context is not None, "urlopen called without a TLS context"
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.check_hostname is True
+
         form = urllib.parse.parse_qs(req.data.decode(), keep_blank_values=True)
         params = {k: v[0] for k, v in form.items()}
         self.requests.append(params)

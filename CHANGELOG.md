@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **`certifi` is carried, and both fetch paths verify against it** (#31, qso-graph-devel#73). They
+  used `urllib` with no context, so they trusted whichever root store the running Python was built
+  against. On macOS that is `/etc/ssl/cert.pem`, a deliberately *reduced* OpenSSL file — 128 roots
+  against the system keychain's 158, and current rather than stale. **qrz.com verifies fine against
+  it today**, so this was latent rather than an outage.
+- **Both paths carry a secret, for different reasons.** The XML API puts the operator's password in
+  the query string; the logbook puts the API key in a POST body — and a body is no safer than the
+  connection under it. So `ssl.CERT_NONE` would hand over whichever secret that call was carrying,
+  which is why verification is never disabled rather than merely why it should not be.
+- The context lives in its own module, `_tls.py`, because the calls are in two files. The "every
+  `urlopen` verifies" check scans the whole package: a check reading one file would have missed the
+  other, which is how a server ends up verifying the password path and not the API-key path.
+- **The logbook test double now asserts the context it is handed.** Adding `context=` broke seven
+  paging tests, because `_FakeQrz.urlopen` did not accept the argument — the right kind of break. A
+  stub that quietly accepts anything is how a missing context goes unnoticed in every test that
+  uses it, so it now checks `CERT_REQUIRED` and `check_hostname` rather than merely tolerating the
+  keyword. Removing the context from `logbook_client.py` is then caught twice over, by the static
+  guard and by those seven tests.
+- **`tests/test_release_gate.py`** asserts the gate suite imports nothing but the standard library
+  and pytest. solar-mcp's 0.3.0 publish failed on exactly that, from the same change.
+
 - **Tool execution errors are flagged `isError`** (#33). Every tool returned `{"error": "..."}` on
   failure, which reaches a client as a *successful* call whose payload happens to contain the word
   "error". They now raise `ToolError`, which `fastmcp` reports as `isError: true` with the message
