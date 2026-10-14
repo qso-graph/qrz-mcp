@@ -49,8 +49,22 @@ def test_no_subprocess():
 
 
 def test_all_urls_https():
-    """Guarantee #7: HTTPS only for external calls."""
-    http_url = re.compile(r'http://(?!localhost|127\.0\.0\.1|::1|xmldata\.qrz\.com)')
+    """Guarantee #7: HTTPS only for external calls.
+
+    The one legitimate `http://` here is QRZ's XML namespace identifier,
+    `_NS = "http://xmldata.qrz.com"`, which must match their schema byte for
+    byte or ElementTree lookups fail. It is nothing anyone connects to.
+
+    It is exempted as an *identifier* and not as a host. Exempting the host —
+    which this check did until #39 — also passes a real plaintext connection to
+    the same host, because `http://xmldata.qrz.com/xml/current/` starts with the
+    excluded string. Measured: with exactly that line in `xml_client.py`, this
+    test passed. The exemption therefore requires the host to be followed by a
+    quote or whitespace, which the namespace is and a URL path is not.
+    """
+    http_url = re.compile(
+        r"""http://(?!localhost|127\.0\.0\.1|::1|xmldata\.qrz\.com(?=["'\s]))"""
+    )
     for py_file in _py_files():
         content = py_file.read_text()
         matches = http_url.findall(content)
@@ -145,3 +159,26 @@ def test_every_outbound_call_verifies():
             f"{filename}:{number} opens a connection without a verifying context: "
             f"{line.strip()}"
         )
+
+
+def test_certifi_is_declared_not_merely_imported():
+    """An import the wheel does not declare is an ImportError at startup.
+
+    `certifi` is imported here to pin the TLS root set (qso-graph-devel#73). An
+    import is not a dependency: what a user gets from `pip install` is what
+    `[project] dependencies` says, and nothing else.
+
+    Measured 2026-10-14: `certifi` is **not** transitive through this repo's
+    other dependencies. Resolved on their own, `qso-graph-auth` + `fastmcp>=4.0,<5`
+    pull 87 packages and `certifi` is not among them. So the declaration is
+    load-bearing — remove it and `pip install qrz-mcp` gives a server that
+    cannot start, which is a hard failure rather than a latent one.
+
+    Read off the files, like every check here: the release gate runs this suite
+    with the package *not installed*, so nothing may import the package.
+    """
+    pyproject = (SRC_DIR.parent / "pyproject.toml").read_text()
+    deps = pyproject.split("dependencies = [", 1)[1].split("]", 1)[0]
+    assert re.search(r'^\s*"certifi', deps, re.MULTILINE), (
+        "the package imports certifi but [project] dependencies does not declare it"
+    )

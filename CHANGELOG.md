@@ -5,6 +5,34 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-10-14
+
+**This release exists to carry a security-gate fix to `main`, where the gate runs.**
+
+The fix merged to `develop` on 2026-10-12 at 19:55Z — thirteen minutes *after* 0.4.0 went
+`develop` → `main` at 19:42Z. So `main` kept the broken check, this repo reported the issue closed,
+and every gate run since has used the holed version. Nothing shipped wrong and no user was exposed:
+the package contains only the namespace identifier, never a plaintext URL. But the check that was
+supposed to prove that was not the fixed one.
+
+A gate fix is landed when it is on `main`. If carrying it there needs a release, that release is
+part of the fix — now written into `.claude/rules/security.md`.
+
+
+- **Fixed: the HTTPS-only check could be passed by a plaintext connection to qrz.com.** Both the
+  release gate in `publish.yml` and `test_all_urls_https` exempted the *host* `xmldata.qrz.com`,
+  because QRZ's XML namespace identifier is the string `http://xmldata.qrz.com` and must match
+  their schema byte for byte. But `http://xmldata.qrz.com/xml/current/` starts with the excluded
+  string, so a real plaintext connection to the same host passed both checks. **Measured, not
+  theorised:** with exactly that line in `xml_client.py`, the test passed and the gate did not
+  fail. Both now exempt the namespace *identifier* — the host followed by a quote or whitespace,
+  which an identifier is and a URL path is not.
+- Nothing shipped wrong: the package contains only the namespace line, so no user was exposed. This
+  was a hole in detection, not an exposure, and it does not reach the wheel — no release is needed
+  for it.
+- Checked across the fleet while fixing it: **no other qso-graph MCP exempts a host** in either
+  check. All twenty-one others exempt loopback addresses only, so this was unique to qrz-mcp.
+
 ## [0.4.0] — 2026-10-12
 
 **Upgrading:** a tool that fails now returns `isError: true` instead of a successful result whose
