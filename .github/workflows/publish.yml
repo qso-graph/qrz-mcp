@@ -88,9 +88,11 @@ jobs:
           # connection to the same host, since
           # "http://xmldata.qrz.com/xml/current/" starts with the excluded
           # string. That hole was measured, not theorised (#39).
-          if grep -rn 'http://' src/ \
+          hits="$(grep -rn 'http://' src/ \
               | grep -v 'localhost\|127\.0\.0\.1\|::1' \
-              | grep -vE '^src/qrz_mcp/xml_client\.py:[0-9]+:_NS = "http://xmldata\.qrz\.com"$'; then
+              | grep -vE '^src/qrz_mcp/xml_client\.py:[0-9]+:_NS = "http://xmldata\.qrz\.com"$' || true)"
+          if [ -n "$hits" ]; then
+            echo "$hits"
             echo "FAIL: non-HTTPS URL found in source"
             exit 1
           fi
