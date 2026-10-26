@@ -60,7 +60,7 @@ def test_the_gate_suite_only_needs_the_standard_library_and_pytest():
     # The real standard-library set rather than a hand-written list: a list I
     # have to remember to extend is the same shape of mistake as the one this
     # file exists to catch. (`sys.stdlib_module_names` is 3.10+, and this
-    # package requires 3.10.)
+    # package requires 3.11.)
     allowed = set(sys.stdlib_module_names) | {"pytest"}
     tree = ast.parse(GATE.read_text(), filename=str(GATE))
     outside = sorted(n for n in _imported_names(tree) if n.split(".")[0] not in allowed)
