@@ -5,6 +5,33 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A `429` from QRZ is now honoured.** QRZ asking this client to stop is the
+  most explicit form a request limit takes, and it was invisible here:
+  `HTTPError` is an `OSError`, so a 429 landed in the `except OSError` clause
+  and became "check network and credentials" with the status discarded. Now the
+  `Retry-After` interval is read and bounded to between a minute and an hour,
+  nothing more is sent until it has passed, and the tool says how long to wait.
+  Both the XML and Logbook APIs share that, because the limit is QRZ's view of
+  this client rather than of one of its APIs.
+
+### Fixed
+
+- **A freeze no longer hangs the tool call.** After an auth failure the limiter
+  froze for a minute, and after an apparent IP ban for an hour — and it *slept*
+  through them. A tool call is synchronous and behind a client timeout, so a
+  user whose address QRZ had blocked got an hour of silence from every tool
+  instead of a sentence telling them what had happened. A freeze now refuses
+  immediately and says how long is left. The short spacing waits — the minimum
+  gap and a token-bucket deficit, under two seconds at 35 requests a minute —
+  are still slept, because that is what they are for.
+- The limiter took its sleeps by releasing and re-acquiring its own lock
+  mid-block, which left the lock unheld if a sleep was interrupted and then
+  failed on the way out. Sleeps are taken outside the lock now.
+
 ## [0.5.0] — 2026-10-26
 
 ### Changed

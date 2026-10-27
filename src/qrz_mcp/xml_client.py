@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import os
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
 from . import __version__, _tls
 from .cache import TTLCache
-from .rate_limiter import RateLimiter
+from .rate_limiter import RateLimited, RateLimiter
 from .types import CallsignRecord, DxccRecord
 
 _XML_URL = "https://xmldata.qrz.com/xml/current/"
@@ -112,21 +113,43 @@ class XmlClient:
         Catches all urllib exceptions to prevent credential-bearing URLs
         from leaking through error messages (login puts password in query params).
         """
-        self._rate_limiter.wait()
         qs = urllib.parse.urlencode(params)
         url = f"{_XML_URL}?{qs}"
         req = urllib.request.Request(url, method="GET")
         req.add_header("User-Agent", self._agent)
         try:
+            self._rate_limiter.wait()
             with urllib.request.urlopen(req, timeout=15, context=_tls.context()) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
+        except RateLimited:
+            # From wait() during a freeze, or from the 429 branch below. It must
+            # reach the caller intact: HTTPError is an OSError, so without this
+            # clause the message telling the user when to come back would be
+            # rewritten by the one below as a network or credentials problem.
+            raise
+        except urllib.error.HTTPError as e:
+            # A 429 is QRZ stating its limit outright, so it is honoured.
+            # HTTPError is an OSError, so this must come before that clause or
+            # the status is discarded. Only the code and Retry-After are read;
+            # the exception's text and .url are not used, because this URL
+            # carries the password in its query string. 503 counts only with
+            # Retry-After, a deliberate shed; a bare 503 is an outage.
+            if e.code == 429 or (e.code == 503 and e.headers.get("Retry-After")):
+                raise RateLimited(
+                    self._rate_limiter.note_429(e.headers.get("Retry-After"))
+                ) from None
+            raise RuntimeError(
+                "QRZ request failed — check network and credentials"
+            ) from None
         except ConnectionRefusedError:
             self._rate_limiter.freeze_ban()
-            raise RuntimeError("QRZ connection refused — possible IP ban")
+            raise RuntimeError("QRZ connection refused — possible IP ban") from None
         except OSError as e:
             if "Connection refused" in str(e):
                 self._rate_limiter.freeze_ban()
-            raise RuntimeError("QRZ request failed — check network and credentials")
+            raise RuntimeError(
+                "QRZ request failed — check network and credentials"
+            ) from None
         return ET.fromstring(body)
 
     def _login(self) -> str:
