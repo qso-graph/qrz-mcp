@@ -7,6 +7,7 @@ qso-graph-devel/planning/MCP-SECURITY-FRAMEWORK.md.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 
@@ -40,6 +41,12 @@ def retry_after(header: str | None) -> float:
     try:
         seconds = float(header) if header else 0.0
     except ValueError:
+        seconds = 0.0
+    # "nan" and "inf" parse as floats, and nan defeats the clamp below: every
+    # comparison against it is False, so it would survive into a deadline that
+    # is then never in the future, leaving the freeze off altogether. A header
+    # we cannot make sense of means the floor.
+    if not math.isfinite(seconds):
         seconds = 0.0
     return min(max(seconds, MIN_BACKOFF), MAX_BACKOFF)
 
