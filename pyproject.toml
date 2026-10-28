@@ -9,7 +9,7 @@ requires-python = ">=3.11"
 dependencies = [
     "qso-graph-auth>=0.1.2",
     "fastmcp>=4.0,<5",
-    "certifi",
+    "certifi>=2026.10.19",
 ]
 keywords = [
     "amateur-radio", "ham-radio", "qrz", "callsign", "dxcc",

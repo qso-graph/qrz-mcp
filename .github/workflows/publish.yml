@@ -161,10 +161,17 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
 
       - name: Install test dependencies
-        run: pip install pytest pip-audit
+        run: |
+          # pip loads its OWN vendored certifi in addition to the system
+          # trust store, and there is no supported way to disable that, so a
+          # current certifi in uv.lock does not cover pip itself. 26.2.2 is
+          # the eMudhra fix. https://discuss.python.org/t/109576
+          python -m pip install --upgrade 'pip>=26.2.2'
+          python -m pip --version   # in the log, not assumed
+          pip install pytest pip-audit
 
       - name: Run security test suite
         run: python -m pytest tests/test_security.py -v
@@ -218,7 +225,7 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
 
       - name: Install build dependencies
         if: needs.security.outputs.resume != 'true'
