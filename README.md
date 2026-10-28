@@ -41,18 +41,18 @@ qrz-mcp uses qso-graph-auth personas for credential management. QRZ has **two se
 uv tool install qso-graph-auth
 
 # Create a persona (--start is required)
-qso-auth persona add --name ki7mt --callsign KI7MT --start 2018-01-01
+qso-graph-auth persona add --name ki7mt --callsign KI7MT --start 2018-01-01
 
 # XML API (qrz_lookup, qrz_dxcc)
-qso-auth provider enable ki7mt qrz
-qso-auth creds set ki7mt qrz              # asks for your username, then your password (hidden)
+qso-graph-auth provider enable ki7mt qrz
+qso-graph-auth creds set ki7mt qrz              # asks for your username, then your password (hidden)
 
 # Logbook API (qrz_logbook_status, qrz_logbook_fetch, qrz_download)
-qso-auth provider enable ki7mt qrz_logbook
-qso-auth creds set ki7mt qrz_logbook      # asks for your username, then your API key
+qso-graph-auth provider enable ki7mt qrz_logbook
+qso-graph-auth creds set ki7mt qrz_logbook      # asks for your username, then your API key
 
 # Verify
-qso-auth creds doctor
+qso-graph-auth creds doctor
 ```
 
 Pass the persona name (`ki7mt` above) as the `persona` argument on every tool call.
