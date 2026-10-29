@@ -5,6 +5,19 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`qrz_download`'s `.adi` has a real Header.** It began `<ADIF_VER:5>3.1.6`, and ADIF 3.1.7
+  (IV.A.3) says a file whose first character is `<` has no Header, so a strict logger read
+  `ADIF_VER` and `PROGRAMID` as fields of the first QSO. The file now opens with a line of
+  text, then the same two fields.
+- **ADIF is read and written by `qso_graph_lib.adif`**, the fleet's one ADI reader and writer,
+  as ADIF 3.1.7 defines them, passing ADIF's own test files. QRZ's escaped markers are read
+  as before, without rewriting values; output is otherwise unchanged. New dependency:
+  `qso-graph-lib>=0.2.0` (standard library only).
+
 ## [0.6.1] — 2026-10-29
 
 - Assert that the command is the package name

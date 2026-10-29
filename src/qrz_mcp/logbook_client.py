@@ -10,6 +10,9 @@ import urllib.parse
 import urllib.request
 from typing import Any, Iterator
 
+from qso_graph_lib.adif import read as read_adi
+from qso_graph_lib.adif import write as write_adi
+
 from . import __version__, _tls
 from .rate_limiter import RateLimited, RateLimiter
 from .types import LogbookStatus, QsoRecord
@@ -20,17 +23,6 @@ _LOGBOOK_URL = "https://logbook.qrz.com/api"
 # page comes back short. _MAX_PAGES is a runaway guard (~50,000 QSOs).
 _PAGE_SIZE = 250
 _MAX_PAGES = 200
-
-# ADIF field marker: <FIELD:LEN>VALUE or <FIELD:LEN:TYPE>VALUE.
-# Matches both the literal form and QRZ's escaped form ("&lt;call:6&gt;"), so
-# a payload can be scanned without rewriting the value text around it.
-_ADIF_FIELD_RE = re.compile(
-    r"(?:<|&lt;)(\w+):(\d+)(?::\w+)?(?:>|&gt;)", re.IGNORECASE
-)
-
-# End-of-record / end-of-header markers, literal or escaped.
-_ADIF_EOR_RE = re.compile(r"(?:<|&lt;)eor(?:>|&gt;)", re.IGNORECASE)
-_ADIF_EOH_RE = re.compile(r"(?:<|&lt;)eoh(?:>|&gt;)", re.IGNORECASE)
 
 # "ADIF" is the final key in a FETCH response and its value may contain raw
 # "&", "=" and newlines, so it is taken as the entire rest of the body rather
@@ -98,74 +90,39 @@ def _parse_kv(body: str) -> dict[str, str]:
 
 
 def _parse_adif_records(adif: str) -> list[dict[str, str]]:
-    """Parse ADIF text into a list of field dicts.
+    """Parse ADIF text into a list of field dicts, read by qso_graph_lib.adif.
 
-    Values are consumed by their declared length, never by scanning for the
-    next delimiter. That is what makes arbitrary user text safe: a comment may
-    contain "&", "=", "<", ">" or an entity-like literal, and none of it can be
-    mistaken for structure. Markers are matched in either literal ("<call:6>")
-    or QRZ-escaped ("&lt;call:6&gt;") form, so the payload never has to be
-    rewritten before parsing — which is what previously corrupted values.
-
+    The fleet's one ADI reader, as ADIF 3.1.7 defines it. Values are taken by their
+    declared length, never by scanning for the next delimiter, so arbitrary user text
+    is safe: a comment may contain "&", "=", "<", ">" or an entity-like literal.
+    Markers are matched literal ("<call:6>") or QRZ-escaped ("&lt;call:6&gt;"), so
+    the payload is never rewritten before parsing, which once corrupted values.
     Lengths are counted in characters, matching QRZ (a 12-character accented
-    comment is declared as 12, not its 16-byte UTF-8 length).
+    comment is declared as 12, not its 16-byte UTF-8 length). Names are upper-cased
+    and values stripped, as this server has always returned them.
     """
-    records: list[dict[str, str]] = []
-    current: dict[str, str] = {}
-
-    pos = 0
-
-    # Skip the header, if present (everything up to and including <EOH>).
-    eoh = _ADIF_EOH_RE.search(adif)
-    if eoh:
-        pos = eoh.end()
-
-    while pos < len(adif):
-        eor = _ADIF_EOR_RE.match(adif, pos)
-        if eor:
-            if current:
-                records.append(current)
-                current = {}
-            pos = eor.end()
-            continue
-
-        m = _ADIF_FIELD_RE.match(adif, pos)
-        if m:
-            field = m.group(1).upper()
-            length = int(m.group(2))
-            value_start = m.end()
-            # Clamp: a declared length longer than the remaining text must not
-            # read past the end, and pos must never rewind before the marker.
-            value_end = min(value_start + length, len(adif))
-            current[field] = adif[value_start:value_end].strip()
-            pos = max(m.end(), value_end)
-        else:
-            pos += 1
-
-    if current:
-        records.append(current)
-
-    return records
+    doc = read_adi(adif, escaped_markers=True)
+    return [{k: v.strip() for k, v in r.fields.items()} for r in doc.records]
 
 
-_ADIF_HEADER = "<ADIF_VER:5>3.1.6\n<PROGRAMID:7>qrz-mcp\n<EOH>\n"
+# ADIF 3.1.7 IV.A.3: a Header begins with a character other than "<". This header
+# used to begin "<ADIF_VER:5>", and a file that begins with "<" has, by the
+# specification, no Header, so a strict logger read ADIF_VER and PROGRAMID as
+# fields of the first QSO. qso_graph_lib.adif's write opens it with text.
+_ADIF_HEADER_TEXT = "QRZ Logbook export by qrz-mcp"
+_ADIF_HEADER_FIELDS = {"ADIF_VER": "3.1.6", "PROGRAMID": "qrz-mcp"}
 
 
 def _records_to_adif(records: list[dict[str, str]]) -> str:
-    """Serialise parsed records back to standard ADIF with literal markers.
+    """Serialise parsed records as a standard .adi file, Header first, literal markers.
 
     QRZ sends markers escaped ("&lt;call:6&gt;"), which no logger will import.
     Re-emitting from parsed records (rather than concatenating raw fragments)
-    guarantees the output is a valid .adi file and that each declared length
-    matches its value — including values that themselves contain "<", ">" or
-    "&", which are legal ADIF payload precisely because fields are
-    length-delimited.
+    guarantees a valid .adi file and that each declared length matches its value,
+    including values that themselves contain "<", ">" or "&", which are legal ADIF
+    payload precisely because fields are length-delimited.
     """
-    lines: list[str] = []
-    for rec in records:
-        fields = "".join(f"<{k}:{len(v)}>{v}" for k, v in rec.items())
-        lines.append(f"{fields}<EOR>")
-    return "\n".join(lines) + ("\n" if lines else "")
+    return write_adi(records, header=_ADIF_HEADER_FIELDS, header_text=_ADIF_HEADER_TEXT)
 
 
 def _count_records(adif_text: str) -> int:
@@ -512,7 +469,7 @@ class LogbookClient:
         if _is_mock():
             adif = _parse_kv(_MOCK_FETCH_BODY).get("ADIF", "")
             records = _parse_adif_records(adif)
-            adif_text = _ADIF_HEADER + _records_to_adif(records)
+            adif_text = _records_to_adif(records)
             return {"adif": adif_text, "record_count": len(records)}
 
         options = self._build_options(
@@ -523,5 +480,5 @@ class LogbookClient:
         for records in self._iter_pages(options):
             all_records.extend(records)
 
-        adif_text = _ADIF_HEADER + _records_to_adif(all_records)
+        adif_text = _records_to_adif(all_records)
         return {"adif": adif_text, "record_count": len(all_records)}

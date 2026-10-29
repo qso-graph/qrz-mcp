@@ -626,3 +626,19 @@ class TestTlsAtRuntime:
         from qrz_mcp._tls import context
 
         assert context().cert_store_stats()["x509_ca"] > 100
+
+
+class TestDownloadedAdifIsCompliant:
+    """The .adi qrz_download returns, read back by the fleet's ADI reader."""
+
+    def test_the_header_is_a_header_and_not_the_first_qso(self) -> None:
+        from qso_graph_lib.adif import read
+
+        from qrz_mcp.logbook_client import _records_to_adif
+
+        text = _records_to_adif([{"CALL": "W1AW", "COMMENT": "a <b> & c"}])
+        assert text[0] != "<"  # ADIF 3.1.7 IV.A.3: a file starting "<" has no Header
+        doc = read(text)
+        assert doc.problems == []
+        assert doc.header == {"ADIF_VER": "3.1.6", "PROGRAMID": "qrz-mcp"}
+        assert [r.fields for r in doc.records] == [{"CALL": "W1AW", "COMMENT": "a <b> & c"}]

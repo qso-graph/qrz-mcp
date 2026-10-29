@@ -10,6 +10,8 @@ dependencies = [
     "qso-graph-auth>=0.1.2",
     "fastmcp>=4.0,<5",
     "certifi>=2026.10.19",
+    # ADIF reading and writing, shared with the other logbook servers. Standard library only.
+    "qso-graph-lib>=0.2.0",
 ]
 keywords = [
     "amateur-radio", "ham-radio", "qrz", "callsign", "dxcc",

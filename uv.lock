@@ -1417,6 +1417,7 @@ dependencies = [
     { name = "certifi" },
     { name = "fastmcp" },
     { name = "qso-graph-auth" },
+    { name = "qso-graph-lib" },
 ]
 
 [package.dev-dependencies]
@@ -1431,6 +1432,7 @@ requires-dist = [
     { name = "certifi", specifier = ">=2026.10.19" },
     { name = "fastmcp", specifier = ">=4.0,<5" },
     { name = "qso-graph-auth", specifier = ">=0.1.2" },
+    { name = "qso-graph-lib", specifier = ">=0.2.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1450,6 +1452,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e0/30/2780439fb8ec1472098aa8b2dfc313da19148a5ff135bc041fa625e050c1/qso_graph_auth-0.1.6.tar.gz", hash = "sha256:0ebc73555c1b765a7ba9d5c36b03ddaaac9f13967f6d00991f6d61d21783da71", size = 79538, upload-time = "2026-10-11T01:52:34.713Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/01/01/3bcf6815c0516c47c99a4a56ece2934445499424a60f37de40a28f344ef3/qso_graph_auth-0.1.6-py3-none-any.whl", hash = "sha256:0f0ad0cffc51794a5c73314841b15c5ad8edefc00038b1282839416fff71d4f2", size = 34113, upload-time = "2026-10-11T01:52:33.217Z" },
+]
+
+[[package]]
+name = "qso-graph-lib"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/12/10/028585c4e4b36df9d3f8ca645535ad24087a0abd01494ef226d778a5208b/qso_graph_lib-0.2.0.tar.gz", hash = "sha256:bfb551521ae593b0d161ae8a64afd7ad17b69d4b8f10ed953ce53463854088cd", size = 442846, upload-time = "2026-10-29T15:08:52.182Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/10/ff3ae750da9a93d8a905a6d0d01687fbd3d84c254794aadc0dee034fee13/qso_graph_lib-0.2.0-py3-none-any.whl", hash = "sha256:965505524e7fb416e8261ceeee690beba1a92d0e935c11e5e5cacbe4ecfc9cb8", size = 27805, upload-time = "2026-10-29T15:08:50.962Z" },
 ]
 
 [[package]]
