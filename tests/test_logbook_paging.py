@@ -4,7 +4,9 @@ Covers the QRZ Logbook API behaviour documented at
 https://www.qrz.com/docs/logbook/QRZLogbookAPI.html:
 
   * the date filter is ``BETWEEN:YYYY-MM-DD+YYYY-MM-DD`` (there is no
-    AFTER/BEFORE option, and QRZ answers RESULT=FAIL without a REASON);
+    AFTER/BEFORE option);
+  * a FETCH that matches nothing is answered ``RESULT=FAIL&COUNT=0`` with no
+    REASON (measured 2026-11-07, #74), which is an empty result, not an error;
   * paging is ``MAX:250,AFTERLOGID:n`` inside OPTION, with n advancing to the
     highest ``app_qrzlog_logid`` seen plus one (QRZ rejects unrecognized POST
     parameters, and ADIF-type responses carry no LOGIDS key);
@@ -15,7 +17,7 @@ The tests run the real ``LogbookClient._post`` against a fake
 verbatim values, ADIF as the final key), so request construction and response
 parsing are both exercised. No network access.
 
-Test IDs: QRZ-L2-060 through QRZ-L2-072
+Test IDs: QRZ-L2-060 through QRZ-L2-077
 """
 
 from __future__ import annotations
@@ -35,12 +37,12 @@ from qrz_mcp.rate_limiter import RateLimiter
 _TOTAL = 620  # three pages at MAX:250
 
 
-def _build_db():
+def _build_db(total: int = _TOTAL):
     import datetime
 
     base = datetime.date(2020, 1, 1)
     rows = []
-    for i in range(_TOTAL):
+    for i in range(total):
         day = base + datetime.timedelta(days=i)
         rows.append(
             {
@@ -70,8 +72,9 @@ def _wire(row: dict[str, str]) -> str:
 class _FakeQrz:
     """Stands in for logbook.qrz.com/api and records every request."""
 
-    def __init__(self) -> None:
+    def __init__(self, db: list[dict[str, str]] | None = None) -> None:
         self.requests: list[dict[str, str]] = []
+        self.db = _DB if db is None else db
 
     def urlopen(self, req, timeout=15, context=None):
         # The real call passes a verifying context (#31), and this double
@@ -100,11 +103,15 @@ class _FakeQrz:
 
         after = int(options.get("AFTERLOGID", 0))
         limit = int(options.get("MAX", 10**9))
-        rows = [r for r in _DB if int(r["app_qrzlog_logid"]) >= after]
+        rows = [r for r in self.db if int(r["app_qrzlog_logid"]) >= after]
         if "BETWEEN" in options:
             start, end = (d.replace("-", "") for d in options["BETWEEN"].split("+"))
             rows = [r for r in rows if start <= r["qso_date"] <= end]
         rows = rows[:limit]
+
+        # Real QRZ says "no match" as a failure with a zero count and no REASON.
+        if not rows:
+            return _Response(b"RESULT=FAIL&COUNT=0")
 
         # ADIF is the final key; no LOGIDS key, as in real ADIF-type responses.
         body = f"RESULT=OK&COUNT={len(rows)}&ADIF=" + "".join(_wire(r) for r in rows)
@@ -120,9 +127,9 @@ class _Response(io.BytesIO):
 
 
 @contextmanager
-def _live_client():
+def _live_client(db: list[dict[str, str]] | None = None):
     """A LogbookClient wired to the fake QRZ, with mock mode off."""
-    fake = _FakeQrz()
+    fake = _FakeQrz(db)
     client = LogbookClient(RateLimiter(min_delay=0.0, tokens_per_min=100_000))
     client.configure("TESTKEY", "W1AW")
     with mock.patch.dict(os.environ, {"QRZ_MCP_MOCK": "0"}), mock.patch(
@@ -298,3 +305,56 @@ class TestDateValidation:
         from qrz_mcp.logbook_client import _iso_date
         with pytest.raises(ValueError, match="Invalid date"):
             _iso_date(bad)
+
+
+# ---------------------------------------------------------------------------
+# QRZ-L2-073..077: empty results and the page cap (#74)
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyResult:
+    def test_fetch_of_empty_range_returns_nothing(self):
+        """QRZ-L2-073: RESULT=FAIL&COUNT=0 is an empty result, not an error."""
+        with _live_client() as (client, fake):
+            assert client.fetch(start_date="2030-01-01", end_date="2030-12-31") == []
+
+        assert len(fake.requests) == 1
+
+    def test_download_of_empty_range_returns_empty_document(self):
+        """QRZ-L2-074: an empty download is a valid ADIF document of no records."""
+        with _live_client() as (client, _fake):
+            result = client.download_adif(start_date="2030-01-01")
+
+        assert result["record_count"] == 0
+        assert "<EOH>" in result["adif"].upper()
+
+    def test_exact_multiple_of_page_size_downloads_everything(self):
+        """QRZ-L2-075: 500 records page fully; the empty third page ends paging."""
+        db = _build_db(500)
+        with _live_client(db) as (client, fake):
+            result = client.download_adif()
+
+        assert result["record_count"] == 500
+        assert len(fake.requests) == 3  # 250 + 250 + empty
+
+    def test_real_failure_still_raises(self):
+        """QRZ-L2-076: a FAIL with a REASON, or without COUNT=0, stays an error."""
+        client = LogbookClient(RateLimiter(min_delay=0.0, tokens_per_min=100))
+        client.configure("TESTKEY")
+        for body, match in [
+            (b"RESULT=FAIL&REASON=invalid option", "invalid option"),
+            (b"RESULT=FAIL&COUNT=0&REASON=invalid option", "invalid option"),
+            (b"RESULT=FAIL", "unknown"),
+        ]:
+            with mock.patch.dict(os.environ, {"QRZ_MCP_MOCK": "0"}), mock.patch(
+                "urllib.request.urlopen", lambda *a, _b=body, **k: _Response(_b)
+            ), pytest.raises(RuntimeError, match=match):
+                client.fetch(limit=5)
+
+    def test_page_cap_refuses_rather_than_truncates(self):
+        """QRZ-L2-077: reaching the page cap is an error, never a short log."""
+        db = _build_db(30)
+        with mock.patch("qrz_mcp.logbook_client._MAX_PAGES", 2), _live_client(db) as (
+            client, _fake,
+        ), pytest.raises(RuntimeError, match="more than 20 QSOs"):
+            list(client._iter_pages([], page_size=10))
