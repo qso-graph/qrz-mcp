@@ -5,6 +5,20 @@ All notable changes to `qrz-mcp` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **An empty result is no longer an error** (#74). QRZ answers a fetch that matches nothing
+  with `RESULT=FAIL&COUNT=0` and no `REASON`, which `qrz_download` and `qrz_logbook_fetch`
+  reported as "QRZ Logbook error: unknown". They now return no records. The same answer to
+  the page after the last full one made any download whose total was an exact multiple of
+  250 fail outright, discarding the records already fetched. Every other `FAIL` is still an
+  error.
+- **A logbook past the page cap is refused, not truncated.** Paging stops at 200 pages of
+  250 (50,000 QSOs). Reaching that used to return the first 50,000 as if they were the whole
+  book; it is now an error that asks for a date range.
+
 ## [0.6.2] — 2026-10-29
 
 ### Fixed

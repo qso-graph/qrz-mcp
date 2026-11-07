@@ -20,7 +20,8 @@ from .types import LogbookStatus, QsoRecord
 _LOGBOOK_URL = "https://logbook.qrz.com/api"
 
 # QRZ paging guidance: MAX:250,AFTERLOGID:n in OPTION, advancing n until a
-# page comes back short. _MAX_PAGES is a runaway guard (~50,000 QSOs).
+# page comes back short. _MAX_PAGES is a runaway guard (50,000 QSOs); reaching
+# it is an error, so a long book is never returned cut short as if complete.
 _PAGE_SIZE = 250
 _MAX_PAGES = 200
 
@@ -288,6 +289,16 @@ class LogbookClient:
             raise RuntimeError(f"QRZ Logbook auth failed: {kv.get('REASON', 'unknown')}")
 
         if kv.get("RESULT") == "FAIL":
+            # QRZ answers a FETCH that matches nothing with RESULT=FAIL&COUNT=0
+            # and no REASON (measured 2026-11-07, #74). That is an empty result:
+            # raising on it turned every empty range into "error: unknown", and
+            # failed any download whose total was an exact multiple of a page.
+            if (
+                params.get("ACTION") == "FETCH"
+                and kv.get("COUNT") == "0"
+                and "REASON" not in kv
+            ):
+                return kv
             raise RuntimeError(f"QRZ Logbook error: {kv.get('REASON', 'unknown')}")
 
         return kv
@@ -402,6 +413,10 @@ class LogbookClient:
             if next_after <= after:  # no progress: never loop
                 return
             after = next_after
+        raise RuntimeError(
+            f"QRZ logbook has more than {_MAX_PAGES * page_size} QSOs matching "
+            "this request; narrow it with a date range"
+        )
 
     def fetch(
         self,
