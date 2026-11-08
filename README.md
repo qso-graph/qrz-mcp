@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/qrz-mcp?label=PyPI&color=blue)](https://pypi.org/project/qrz-mcp/)
 [![MCP Registry](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.modelcontextprotocol.io%2Fv0%2Fservers%3Fsearch%3Dio.github.qso-graph%2Fqrz-mcp%26version%3Dlatest&query=%24.servers%5B0%5D.server.version&label=MCP%20Registry&color=blue)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.qso-graph/qrz-mcp&version=latest)
 
-MCP server for [QRZ.com](https://www.qrz.com/) — callsign lookups, DXCC entity resolution, and logbook queries through any MCP-compatible AI assistant.
+MCP server for [QRZ.com](https://www.qrz.com/)—callsign lookups, DXCC entity resolution, and logbook queries through any MCP-compatible AI assistant.
 
 Part of the [qso-graph](https://qso-graph.io/) project. Uses [qso-graph-auth](https://pypi.org/project/qso-graph-auth/) for credential management.
 
@@ -29,7 +29,7 @@ uvx qrz-mcp            # run it; nothing to install
 
 ### 1. Set up credentials
 
-qrz-mcp uses qso-graph-auth personas for credential management. QRZ has **two separate auth mechanisms**, exposed as two providers — set up whichever you need:
+qrz-mcp uses qso-graph-auth personas for credential management. QRZ has **two separate auth mechanisms**, exposed as two providers—set up whichever you need:
 
 | Provider | Tools | Credentials |
 |----------|-------|-------------|
@@ -57,7 +57,7 @@ qso-graph-auth creds doctor
 
 Pass the persona name (`ki7mt` above) as the `persona` argument on every tool call.
 
-> Omit `--password` / `--api-key` to be prompted instead — passing secrets as CLI arguments leaves them in your shell history.
+> Omit `--password` / `--api-key` to be prompted instead—passing secrets as CLI arguments leaves them in your shell history.
 
 **XML API** (callsign lookup, DXCC) requires a QRZ XML Subscription ($35.95/yr). Free tier returns name and address only.
 
@@ -65,7 +65,7 @@ Pass the persona name (`ki7mt` above) as the `persona` argument on every tool ca
 
 ### 2. Configure your MCP client
 
-qrz-mcp works with any MCP-compatible client. Add the server config and restart — tools appear automatically.
+qrz-mcp works with any MCP-compatible client. Add the server config and restart—tools appear automatically.
 
 #### Claude Desktop
 
@@ -159,7 +159,7 @@ Add to `~/.gemini/settings.json` (global) or `.gemini/settings.json` (project):
 
 ### 3. Ask questions
 
-> "Look up W1AW on QRZ — what's their grid and license class?"
+> "Look up W1AW on QRZ—what's their grid and license class?"
 
 > "What DXCC entity is VP8PJ?"
 
@@ -171,10 +171,10 @@ Add to `~/.gemini/settings.json` (global) or `.gemini/settings.json` (project):
 
 QRZ enforces undocumented rate limits that can trigger **24-hour IP bans**. qrz-mcp protects you:
 
-- 500ms minimum delay between all API calls
+- 500 ms minimum delay between all API calls
 - Token bucket: 35 requests/minute
-- 60s freeze on authentication failures
-- 3600s freeze on connection refused (IP ban detection)
+- 60 s freeze on authentication failures
+- 3600 s freeze on connection refused (IP ban detection)
 - In-memory response cache (5 min for callsigns, 1 hour for DXCC)
 
 ## Testing Without Credentials
