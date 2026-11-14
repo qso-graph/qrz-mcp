@@ -93,7 +93,7 @@ def _parse_kv(body: str) -> dict[str, str]:
 def _parse_adif_records(adif: str) -> list[dict[str, str]]:
     """Parse ADIF text into a list of field dicts, read by qso_graph_lib.adif.
 
-    The fleet's one ADI reader, as ADIF 3.1.7 defines it. Values are taken by their
+    The fleet's one ADI reader, as ADIF 3.1.8 defines it. Values are taken by their
     declared length, never by scanning for the next delimiter, so arbitrary user text
     is safe: a comment may contain "&", "=", "<", ">" or an entity-like literal.
     Markers are matched literal ("<call:6>") or QRZ-escaped ("&lt;call:6&gt;"), so
@@ -106,12 +106,12 @@ def _parse_adif_records(adif: str) -> list[dict[str, str]]:
     return [{k: v.strip() for k, v in r.fields.items()} for r in doc.records]
 
 
-# ADIF 3.1.7 IV.A.3: a Header begins with a character other than "<". This header
+# ADIF 3.1.8 IV.A.3: a Header begins with a character other than "<". This header
 # used to begin "<ADIF_VER:5>", and a file that begins with "<" has, by the
 # specification, no Header, so a strict logger read ADIF_VER and PROGRAMID as
 # fields of the first QSO. qso_graph_lib.adif's write opens it with text.
 _ADIF_HEADER_TEXT = "QRZ Logbook export by qrz-mcp"
-_ADIF_HEADER_FIELDS = {"ADIF_VER": "3.1.6", "PROGRAMID": "qrz-mcp"}
+_ADIF_HEADER_FIELDS = {"ADIF_VER": "3.1.8", "PROGRAMID": "qrz-mcp"}
 
 
 def _records_to_adif(records: list[dict[str, str]]) -> str:
