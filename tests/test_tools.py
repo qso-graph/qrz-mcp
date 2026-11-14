@@ -199,7 +199,7 @@ class TestQrzDownload:
     def test_has_adif_header(self):
         """QRZ-L2-032: ADIF output includes header."""
         result = qrz_download(persona="test")
-        assert "<ADIF_VER:5>3.1.6" in result["adif"]
+        assert "<ADIF_VER:5>3.1.8" in result["adif"]
         assert "<PROGRAMID:7>qrz-mcp" in result["adif"]
         assert "<EOH>" in result["adif"]
 
@@ -637,8 +637,8 @@ class TestDownloadedAdifIsCompliant:
         from qrz_mcp.logbook_client import _records_to_adif
 
         text = _records_to_adif([{"CALL": "W1AW", "COMMENT": "a <b> & c"}])
-        assert text[0] != "<"  # ADIF 3.1.7 IV.A.3: a file starting "<" has no Header
+        assert text[0] != "<"  # ADIF 3.1.8 IV.A.3: a file starting "<" has no Header
         doc = read(text)
         assert doc.problems == []
-        assert doc.header == {"ADIF_VER": "3.1.6", "PROGRAMID": "qrz-mcp"}
+        assert doc.header == {"ADIF_VER": "3.1.8", "PROGRAMID": "qrz-mcp"}
         assert [r.fields for r in doc.records] == [{"CALL": "W1AW", "COMMENT": "a <b> & c"}]
